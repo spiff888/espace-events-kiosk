@@ -1,0 +1,17 @@
+# Linux server: sudo cp campus-board.service /etc/systemd/system/
+# then: sudo systemctl daemon-reload && sudo systemctl enable --now campus-board
+[Unit]
+Description=Campus Board (eSPACE lobby displays)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/campus-board
+ExecStart=/usr/bin/node /opt/campus-board/server.js
+Restart=always
+RestartSec=10
+User=campusboard
+Environment=TZ=America/Los_Angeles
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,21 @@
+{
+  "org": "Community Church",
+  "port": 8080,
+  "timezone": "America/Los_Angeles",
+  "dailyPullAt": "04:00",
+  "refreshMinutes": 15,
+
+  "espace": {
+    "token": "PASTE_JWT_FROM_v2/requesttoken",
+    "baseUrl": "https://api.espace.cool/api/v2",
+    "eventsPath": "/event/occurrences",
+    "query": { "startDate": "{date}", "endDate": "{date}", "locationId": "{locationId}" },
+    "onlyApproved": true,
+    "onlyPublic": false
+  },
+
+  "campuses": {
+    "main":  { "label": "Main Campus",  "locationId": "REPLACE_ME" },
+    "north": { "label": "North Campus", "locationId": "REPLACE_ME", "timezone": "America/Chicago" }
+  }
+}

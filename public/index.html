@@ -1,0 +1,338 @@
+<title>Campus Day Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Barlow+Semi+Condensed:wght@500;600;700&display=swap">
+<style>
+  :root {
+    color-scheme: dark;
+    --ground: #0d1520;
+    --band: #131e2b;
+    --row-rule: #223246;
+    --ink: #eef2f6;
+    --ink-soft: #9aabbd;
+    --ink-faint: #5d6f83;
+    --now: #f3b94d;
+    --now-ink: #1a1204;
+    --next: #7cc4e8;
+    --display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --u: clamp(12px, 1.15vw, 26px);
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: var(--u);
+    padding-inline: max(16px, 3vw);
+    padding-block: max(14px, 2.2vw);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 1.6);
+    overflow: hidden;
+  }
+
+  header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: calc(var(--u) * .4) calc(var(--u) * 2);
+    padding-bottom: calc(var(--u) * 1.2);
+    border-bottom: 2px solid var(--row-rule);
+  }
+  .org, .campus {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: calc(var(--u) * 2.6);
+    line-height: 1;
+    letter-spacing: .005em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .campus { text-align: right; color: var(--now); font-weight: 600; }
+  .date, .clock {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: calc(var(--u) * 1.6);
+    color: var(--ink-soft);
+    margin: 0;
+  }
+  .clock {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  .clock .ampm { font-size: .7em; margin-left: .15em; color: var(--ink-soft); }
+
+  .board { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .cols, .row {
+    display: grid;
+    grid-template-columns: calc(var(--u) * 11) minmax(0, 1fr) minmax(0, .8fr);
+    column-gap: 0;
+    align-items: stretch;
+  }
+  .cols > span, .row > span { padding-inline: calc(var(--u) * 1); }
+  .cols > span + span, .row > span + span { border-left: 1px solid var(--row-rule); }
+  .cols {
+    font-family: var(--display);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    font-size: calc(var(--u) * .95);
+    color: var(--ink-soft);
+    background: var(--band);
+    padding-block: calc(var(--u) * .7);
+    border-radius: 4px 4px 0 0;
+  }
+  .rows { list-style: none; margin: 0; padding: 0; overflow: hidden; flex: 1; position: relative; }
+  .row {
+    padding-block: calc(var(--u) * 1.05);
+    border-top: 1px solid var(--row-rule);
+    font-size: calc(var(--u) * 1.55);
+    transition: opacity .4s;
+  }
+    .time {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 1.15em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .time small { display: block; font-size: .62em; font-weight: 500; color: var(--ink-soft); margin-top: .15em; }
+  .title { font-weight: 700; overflow-wrap: anywhere; }
+  .title .tag {
+    display: inline-block;
+    vertical-align: .18em;
+    margin-left: .6em;
+    padding: .2em .55em .15em;
+    border-radius: 3px;
+    font-family: var(--display);
+    font-size: .52em;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .room { color: var(--ink-soft); overflow-wrap: anywhere; }
+
+  .row.past { opacity: .38; }
+  .row.now { background: var(--band); box-shadow: inset 5px 0 0 var(--now); }
+  .row.now .tag { background: var(--now); color: var(--now-ink); }
+  .row.now .room { color: var(--ink); }
+  .row.next .tag { border: 1.5px solid var(--next); color: var(--next); }
+
+  .empty {
+    font-family: var(--display);
+    font-size: calc(var(--u) * 2);
+    color: var(--ink-soft);
+    padding: calc(var(--u) * 3) calc(var(--u) * 1);
+  }
+
+  footer {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: .5em 2em;
+    font-size: calc(var(--u) * .85);
+    color: var(--ink-faint);
+  }
+  footer .pages { font-variant-numeric: tabular-nums; }
+  .sample { color: var(--now); }
+
+  /* Narrow windows keep the three columns; they just tighten. */
+  @media (max-width: 720px) {
+    :root { --u: 11px; }
+    body { overflow: auto; height: auto; }
+    header { grid-template-columns: 1fr; }
+    .campus, .clock { text-align: left; }
+    .cols, .row { grid-template-columns: calc(var(--u) * 7.5) minmax(0, 1fr) minmax(0, .8fr); }
+    .row { font-size: 14px; }
+    .rows { overflow: visible; }
+    .board { flex: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .row { transition: none; } }
+</style>
+
+<header>
+  <h1 class="org" id="org">Community Church</h1>
+  <p class="campus" id="campus">Main Campus</p>
+  <p class="date" id="date"></p>
+  <p class="clock" id="clock"></p>
+</header>
+
+<main class="board">
+  <div class="cols" aria-hidden="true"><span>Time</span><span>Event</span><span>Room</span></div>
+  <ol class="rows" id="rows"></ol>
+</main>
+
+<footer>
+  <span id="source"></span>
+  <span class="pages" id="pages"></span>
+</footer>
+
+<script>
+(() => {
+  // ---- Config -------------------------------------------------------------
+  // Served by Campus Board at /board/<campus>, the page reads /api/today/<campus>.
+  // Opened any other way (a local file, a preview), it shows sample events.
+  const m = location.pathname.match(/\/board\/([\w-]+)/);
+  const DATA_URL = m ? `/api/today/${m[1]}` : "";
+  const REFRESH_MS = 5 * 60 * 1000; // re-pull events every 5 minutes
+  const PAGE_MS = 12 * 1000;        // rotate pages when the day overflows the screen
+  const HIDE_PAST_AFTER_MIN = 24 * 60; // keep the full day; set to e.g. 30 to drop finished events
+
+  const $ = id => document.getElementById(id);
+  let events = [];
+  let page = 0;
+  // Sample mode runs a simulated clock starting at 4:38pm so the Now/Next states are visible.
+  let clockOffset = 0;
+  const now = () => Date.now() + clockOffset;
+  function useSampleClock() {
+    const t = new Date(); t.setHours(16, 38, 0, 0);
+    clockOffset = t.getTime() - Date.now();
+  }
+
+  // ---- Sample data (only used when DATA_URL is empty) ---------------------
+  function sampleDay() {
+    const d = new Date(); d.setSeconds(0, 0);
+    const at = (h, m) => { const x = new Date(d); x.setHours(h, m); return x.toISOString(); };
+    return {
+      org: "Community Church",
+      campus: "Main Campus",
+      sample: true,
+      events: [
+        { title: "Team Meeting",             start: at(7, 0),   end: at(8, 0),   rooms: ["South Conference Room"] },
+        { title: "Men's Breakfast",          start: at(8, 30),  end: at(10, 0),  rooms: ["Fellowship Hall"] },
+        { title: "Worship Rehearsal",        start: at(10, 0),  end: at(12, 0),  rooms: ["Main Auditorium"] },
+        { title: "Baptism Class",            start: at(12, 30), end: at(13, 30), rooms: ["Room 204"] },
+        { title: "Wedding Setup",            start: at(13, 0),  end: at(15, 0),  rooms: ["Chapel"] },
+        { title: "Youth Leaders Huddle",     start: at(15, 30), end: at(16, 30), rooms: ["Student Center"] },
+        { title: "Saturday Night Service",   start: at(17, 0),  end: at(18, 15), rooms: ["Main Auditorium"] },
+        { title: "Kids Check-In Volunteers", start: at(16, 30), end: at(18, 30), rooms: ["Kids Wing", "Lobby Kiosks"] },
+        { title: "Prayer Team",              start: at(18, 30), end: at(19, 30), rooms: ["North Building, Room 301"] },
+        { title: "Facilities Lockup",        start: at(21, 0),  end: at(21, 30), rooms: ["All Buildings"] }
+      ]
+    };
+  }
+
+  // ---- Formatting ---------------------------------------------------------
+  const fmtTime = iso => new Date(iso)
+    .toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+    .replace(" AM", "am").replace(" PM", "pm");
+
+  function tick() {
+    const n = new Date(now());
+    $("date").textContent = n.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    const t = n.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    const [hm, ap] = t.split(" ");
+    $("clock").innerHTML = `${hm}<span class="ampm">${ap.toLowerCase()}</span>`;
+  }
+
+  // ---- Render -------------------------------------------------------------
+  function visibleEvents() {
+    const t = now();
+    const cutoff = t - HIDE_PAST_AFTER_MIN * 60000;
+    const list = events
+      .filter(e => new Date(e.end).getTime() > cutoff)
+      .sort((a, b) => new Date(a.start) - new Date(b.start));
+    let nextMarked = false;
+    return list.map(e => {
+      const s = new Date(e.start).getTime(), f = new Date(e.end).getTime();
+      let state = f <= t ? "past" : s <= t ? "now" : "upcoming";
+      if (state === "upcoming" && !nextMarked) { nextMarked = true; state = "upcoming next"; }
+      return { ...e, state };
+    });
+  }
+
+  function rowHTML(e) {
+    const tag = e.state === "now" ? `<span class="tag">Now</span>`
+              : e.state.includes("next") ? `<span class="tag">Next</span>` : "";
+    const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    return `<li class="row ${e.state}">
+      <span class="time">${fmtTime(e.start)}<small>until ${fmtTime(e.end)}</small></span>
+      <span class="title">${esc(e.title)}${tag}</span>
+      <span class="room">${esc((e.rooms || []).join(", "))}</span>
+    </li>`;
+  }
+
+  function render() {
+    const list = visibleEvents();
+    const ol = $("rows");
+    if (!list.length) {
+      ol.innerHTML = `<li class="empty">No more events scheduled today.</li>`;
+      $("pages").textContent = "";
+      return;
+    }
+    // Measure how many rows fit, then paginate.
+    ol.innerHTML = list.map(rowHTML).join("");
+    const narrow = matchMedia("(max-width: 720px)").matches;
+    if (narrow) { $("pages").textContent = ""; return; }
+    const avail = ol.clientHeight;
+    // If the day overflows, trim finished events from the top (keep the latest one)
+    // so the current event is on screen before any paging starts.
+    let heights = [...ol.children].map(r => r.offsetHeight);
+    const total = () => heights.reduce((a, b) => a + b, 0);
+    while (total() > avail - 4 && list.length > 1 && list[1].state === "past") {
+      list.shift(); heights.shift();
+    }
+    ol.innerHTML = list.map(rowHTML).join("");
+    const rows = [...ol.children];
+    const pages = [[]]; let used = 0;
+    rows.forEach((r, i) => {
+      const h = r.offsetHeight;
+      if (used + h > avail - 4 && pages[pages.length - 1].length) { pages.push([]); used = 0; }
+      pages[pages.length - 1].push(i); used += h;
+    });
+    page = page % pages.length;
+    ol.innerHTML = pages[page].map(i => rowHTML(list[i])).join("");
+    $("pages").textContent = pages.length > 1 ? `Page ${page + 1} of ${pages.length}` : "";
+  }
+
+  // ---- Data ---------------------------------------------------------------
+  async function load() {
+    let data;
+    if (DATA_URL) {
+      try {
+        const r = await fetch(DATA_URL, { cache: "no-store" });
+        if (!r.ok) throw new Error(r.status);
+        data = await r.json();
+      } catch (err) {
+        $("source").textContent = `Can't reach the board server (${err.message}). Showing the last list loaded.`;
+        return render();
+      }
+    }
+    if (data && data.demo) {
+      const demo = sampleDay();
+      demo.org = data.org || demo.org; demo.campus = data.campus || demo.campus;
+      useSampleClock();
+      data = demo;
+    } else if (!data) {
+      useSampleClock();
+      data = sampleDay();
+    }
+    events = data.events || [];
+    if (data.org) $("org").textContent = data.org;
+    if (data.campus) $("campus").textContent = data.campus;
+    const stamp = new Date(data.updated || now()).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    $("source").innerHTML = data.sample
+      ? `<span class="sample">Sample events, clock set to 4:38pm</span> · add an eSPACE token to show live bookings`
+      : data.stale
+        ? (data.updated
+            ? `<span class="sample">eSPACE hasn't answered since ${stamp}</span> · showing the last schedule received`
+            : `<span class="sample">Waiting for the first schedule from eSPACE</span>`)
+        : `From eSPACE · updated ${stamp}`;
+    render();
+  }
+
+  load(); tick();
+  setInterval(tick, 1000);
+  setInterval(render, 60 * 1000);
+  setInterval(() => { page++; render(); }, PAGE_MS);
+  setInterval(load, REFRESH_MS);
+  addEventListener("resize", render);
+  document.fonts?.ready.then(render);
+  // Reload once a day (3am) so TVs pick up page updates and start fresh.
+  setInterval(() => { const d = new Date(); if (d.getHours() === 3 && d.getMinutes() === 0 && DATA_URL) location.reload(); }, 60 * 1000);
+  try { navigator.wakeLock?.request("screen").catch(() => {}); } catch {}
+})();
+</script>
