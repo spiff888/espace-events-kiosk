@@ -136,9 +136,43 @@ The server reads `.env` itself when run with Node, so the token lives in the sam
 The server is `src/server.ts`. `npm run build` compiles it to `dist/server.js`, which is what Node and Docker run.
 The TV page, `public/index.html`, is plain HTML, CSS and JavaScript with no build step.
 
-## Customizing the look
+## Matching your church's branding
 
-The display is a single file, `public/index.html`. Colors are CSS variables at the top. Text sizes scale with screen width, so the same page works on 1080p and 4K TVs.
+Add a `theme` block to `config.json`. No code edits or rebuilds are needed, and your colors survive updates. Every key is optional; anything left out keeps the default look. A campus can also carry its own `theme` that overrides the shared one.
+
+```json
+"theme": {
+  "background": "#101820",
+  "surface":    "#1a2530",
+  "rule":       "#2c3a47",
+  "text":       "#f2f4f5",
+  "textMuted":  "#a8b3bc",
+  "textFaint":  "#6f7c86",
+  "accent":     "#e0a526",
+  "accentText": "#101820",
+  "next":       "#7fc4e6",
+  "fontDisplay": "\"Oswald\", \"Arial Narrow\", sans-serif",
+  "fontBody":    "\"Source Sans 3\", system-ui, sans-serif",
+  "fontsUrl":    "https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Source+Sans+3:wght@400;700&display=swap"
+}
+```
+
+| Key | Used for |
+|---|---|
+| `background`, `surface`, `rule` | Page, the header band and "Now" row, the lines between rows and columns |
+| `text`, `textMuted`, `textFaint` | Event names, then times and rooms, then the footer |
+| `accent`, `accentText` | Campus name, "Now" tag and row stripe; the text on the "Now" tag |
+| `next` | The "Next" tag |
+| `fontDisplay`, `fontBody`, `fontsUrl` | Heading and body fonts, and the stylesheet that loads them |
+| `displayWeight`, `displayWeightLight` | Set both to `400` for single-weight faces such as Bebas Neue, so browsers don't fake a bold |
+
+Colors must be hex values. Invalid values are ignored with a warning in the log, never injected into the page.
+
+Tips for TVs: check that text colors reach at least 4.5:1 contrast against `background` (brand link blues are often too dark on a dark screen), and keep `background` dark if your screens are OLED.
+
+## Customizing further
+
+The display is a single file, `public/index.html`. Text sizes scale with the screen, so the same page works on 720p, 1080p, 4K and portrait displays.
 
 ## License
 

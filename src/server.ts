@@ -12,8 +12,27 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 // ----------------------------------------------------------------- types ----
+/** Brand colors and fonts for the TV page. Every key is optional; unset keys keep the default look. */
+interface ThemeConfig {
+  background?: string;   // page background
+  surface?: string;      // column header band and the "Now" row
+  rule?: string;         // lines between rows and columns
+  text?: string;         // main text
+  textMuted?: string;    // dates, rooms, "until" times
+  textFaint?: string;    // footer
+  accent?: string;       // campus name, "Now" tag and stripe
+  accentText?: string;   // text on the "Now" tag
+  next?: string;         // "Next" tag
+  fontDisplay?: string;  // CSS font-family for headings and times
+  fontBody?: string;     // CSS font-family for everything else
+  displayWeight?: number;      // use 400 for single-weight faces like Bebas Neue
+  displayWeightLight?: number;
+  fontsUrl?: string;     // stylesheet URL that loads the fonts, e.g. Google Fonts
+}
+
 interface CampusConfig {
   label?: string;
+  theme?: ThemeConfig;
   locationId?: string | number;
   timezone?: string;
   hideRooms?: string[];
@@ -37,6 +56,7 @@ interface Config {
   refreshMinutes: number;
   /** Minutes after an event ends before it drops off the board. null keeps the whole day. */
   hidePastAfterMinutes: number | null;
+  theme: ThemeConfig;
   espace: EspaceConfig;
   campuses: Record<string, CampusConfig>;
 }
@@ -107,6 +127,7 @@ function loadConfig(): Config {
     refreshMinutes: raw.refreshMinutes ?? 15,
     hidePastAfterMinutes: raw.hidePastAfterMinutes === undefined ? 15 : raw.hidePastAfterMinutes,
     campuses: raw.campuses,
+    theme: raw.theme ?? {},
     espace: {
       token: process.env.ESPACE_TOKEN || e.token || "",
       baseUrl: (e.baseUrl || "https://api.espace.cool/api/v2").replace(/\/$/, ""),
@@ -276,6 +297,40 @@ function boardPayload(key: string) {
   };
 }
 
+// ----------------------------------------------------------------- theme ----
+const THEME_VARS: Record<keyof ThemeConfig, string | null> = {
+  background: "--ground", surface: "--band", rule: "--row-rule",
+  text: "--ink", textMuted: "--ink-soft", textFaint: "--ink-faint",
+  accent: "--now", accentText: "--now-ink", next: "--next",
+  fontDisplay: "--display", fontBody: "--body",
+  displayWeight: "--display-weight", displayWeightLight: "--display-weight-light",
+  fontsUrl: null,
+};
+const COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+const FONT_RE = /^[\w\s"',.-]+$/;
+
+/** Builds the <style>/<link> tags for a campus. Values are validated so config can't inject markup. */
+function themeTags(key: string): string {
+  const t: ThemeConfig = { ...cfg.theme, ...(cfg.campuses[key].theme ?? {}) };
+  const decls: string[] = [];
+  for (const [k, v] of Object.entries(t) as [keyof ThemeConfig, unknown][]) {
+    const cssVar = THEME_VARS[k];
+    if (!cssVar || v == null) continue;
+    const ok =
+      k.startsWith("font") ? typeof v === "string" && FONT_RE.test(v)
+      : k.startsWith("displayWeight") ? typeof v === "number" && v >= 100 && v <= 900
+      : typeof v === "string" && COLOR_RE.test(v);
+    if (ok) decls.push(`${cssVar}: ${v};`);
+    else console.warn(`[${key}] ignoring theme.${k}: ${JSON.stringify(v)} is not valid`);
+  }
+  let out = "";
+  if (typeof t.fontsUrl === "string" && /^https:\/\/[^"<>\s]+$/.test(t.fontsUrl)) {
+    out += `<link rel="stylesheet" href="${t.fontsUrl}">\n`;
+  }
+  if (decls.length) out += `<style>:root { ${decls.join(" ")} }</style>\n`;
+  return out;
+}
+
 function indexPage(): string {
   const links = Object.entries(cfg.campuses)
     .map(([k, c]) => `<li><a href="/board/${k}">${c.label || k}</a> <code>/board/${k}</code></li>`)
@@ -297,7 +352,8 @@ const server = http.createServer(async (req, res) => {
   const board = p.match(/^\/board\/([\w-]+)$/);
   if (board) {
     if (!cfg.campuses[board[1]]) return send(res, 404, `Unknown campus "${board[1]}".`, "text/plain");
-    return send(res, 200, fs.readFileSync(path.join(PUBLIC_DIR, "index.html")), "text/html; charset=utf-8");
+    const html = fs.readFileSync(path.join(PUBLIC_DIR, "index.html"), "utf8").replace("<!--theme-->", themeTags(board[1]));
+    return send(res, 200, html, "text/html; charset=utf-8");
   }
 
   const api = p.match(/^\/api\/today\/([\w-]+)$/);

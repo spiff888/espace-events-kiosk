@@ -1,3 +1,8 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Campus Day Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,6 +20,8 @@
     --now-ink: #1a1204;
     --next: #7cc4e8;
     --display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+    --display-weight: 700;       /* headings, times, tags */
+    --display-weight-light: 500; /* date, clock */
     --body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
     /* Scale from whichever runs out first: height on landscape screens, width on portrait. */
     --u: max(12px, min(2vh, 1.7vw));
@@ -44,17 +51,17 @@
   }
   .org, .campus {
     font-family: var(--display);
-    font-weight: 700;
+    font-weight: var(--display-weight);
     font-size: calc(var(--u) * 2.6);
     line-height: 1;
     letter-spacing: .005em;
     margin: 0;
     text-wrap: balance;
   }
-  .campus { text-align: right; color: var(--now); font-weight: 600; }
+  .campus { text-align: right; color: var(--now); }
   .date, .clock {
     font-family: var(--display);
-    font-weight: 500;
+    font-weight: var(--display-weight-light);
     font-size: calc(var(--u) * 1.6);
     color: var(--ink-soft);
     margin: 0;
@@ -77,7 +84,7 @@
   .cols > span + span, .row > span + span { border-left: 1px solid var(--row-rule); }
   .cols {
     font-family: var(--display);
-    font-weight: 600;
+    font-weight: var(--display-weight);
     text-transform: uppercase;
     letter-spacing: .12em;
     font-size: calc(var(--u) * .95);
@@ -95,12 +102,12 @@
   }
     .time {
     font-family: var(--display);
-    font-weight: 600;
+    font-weight: var(--display-weight);
     font-size: 1.15em;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
-  .time small { display: block; font-size: .62em; font-weight: 500; color: var(--ink-soft); margin-top: .15em; }
+  .time small { display: block; font-size: .62em; font-weight: var(--display-weight-light); color: var(--ink-soft); margin-top: .15em; }
   .title { font-weight: 700; overflow-wrap: anywhere; }
   .title .tag {
     display: inline-block;
@@ -110,7 +117,7 @@
     border-radius: 3px;
     font-family: var(--display);
     font-size: .52em;
-    font-weight: 700;
+    font-weight: var(--display-weight);
     letter-spacing: .12em;
     text-transform: uppercase;
   }
@@ -153,6 +160,9 @@
   }
   @media (prefers-reduced-motion: reduce) { .row { transition: none; } }
 </style>
+<!--theme-->
+</head>
+<body>
 
 <header>
   <h1 class="org" id="org">Community Church</h1>
@@ -341,3 +351,5 @@
   try { navigator.wakeLock?.request("screen").catch(() => {}); } catch {}
 })();
 </script>
+</body>
+</html>
