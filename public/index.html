@@ -16,7 +16,8 @@
     --next: #7cc4e8;
     --display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
     --body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
-    --u: clamp(12px, 1.15vw, 26px);
+    /* Scale from whichever runs out first: height on landscape screens, width on portrait. */
+    --u: max(12px, min(2vh, 1.7vw));
   }
   html, body { height: 100%; }
   body {
