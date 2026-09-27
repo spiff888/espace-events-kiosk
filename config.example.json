@@ -4,6 +4,7 @@
   "timezone": "America/Los_Angeles",
   "dailyPullAt": "04:00",
   "refreshMinutes": 15,
+  "hidePastAfterMinutes": 15,
 
   "espace": {
     "baseUrl": "https://api.espace.cool/api/v2",

@@ -180,7 +180,9 @@
   const DATA_URL = m ? `/api/today/${m[1]}` : "";
   const REFRESH_MS = 5 * 60 * 1000; // re-pull events every 5 minutes
   const PAGE_MS = 12 * 1000;        // rotate pages when the day overflows the screen
-  const HIDE_PAST_AFTER_MIN = 24 * 60; // keep the full day; set to e.g. 30 to drop finished events
+  // Minutes after an event ends before it drops off. Set per campus in config.json
+  // (hidePastAfterMinutes); null keeps the whole day on screen.
+  let hidePastAfterMin = 15;
 
   const $ = id => document.getElementById(id);
   let events = [];
@@ -232,7 +234,7 @@
   // ---- Render -------------------------------------------------------------
   function visibleEvents() {
     const t = now();
-    const cutoff = t - HIDE_PAST_AFTER_MIN * 60000;
+    const cutoff = hidePastAfterMin === null ? -Infinity : t - hidePastAfterMin * 60000;
     const list = events
       .filter(e => new Date(e.end).getTime() > cutoff)
       .sort((a, b) => new Date(a.start) - new Date(b.start));
@@ -305,12 +307,14 @@
     if (data && data.demo) {
       const demo = sampleDay();
       demo.org = data.org || demo.org; demo.campus = data.campus || demo.campus;
+      demo.hidePastAfterMinutes = data.hidePastAfterMinutes;
       useSampleClock();
       data = demo;
     } else if (!data) {
       useSampleClock();
       data = sampleDay();
     }
+    if (data.hidePastAfterMinutes !== undefined) hidePastAfterMin = data.hidePastAfterMinutes;
     events = data.events || [];
     if (data.org) $("org").textContent = data.org;
     if (data.campus) $("campus").textContent = data.campus;

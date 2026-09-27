@@ -56,6 +56,7 @@ Each campus needs its eSPACE location ID. With no token, the server runs in **de
 | `timezone` | `America/Los_Angeles` | Default time zone; a campus can override it with its own `timezone` |
 | `dailyPullAt` | `04:00` | Full pull each morning, campus local time |
 | `refreshMinutes` | `15` | Extra pulls through the day. `0` = once a day only |
+| `hidePastAfterMinutes` | `15` | Minutes after an event ends before it leaves the board. `0` = as soon as it ends, `null` = keep the whole day. A campus can override it |
 | `espace.onlyApproved` | `true` | Hide pending or denied bookings |
 | `espace.onlyPublic` | `false` | Set `true` to hide private or staff-only events on public screens |
 | `campuses.<key>.hideRooms` | `[]` | Room names never shown on that campus's board (e.g. storage, offices) |

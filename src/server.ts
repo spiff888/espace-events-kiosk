@@ -17,6 +17,7 @@ interface CampusConfig {
   locationId?: string | number;
   timezone?: string;
   hideRooms?: string[];
+  hidePastAfterMinutes?: number | null;
 }
 
 interface EspaceConfig {
@@ -34,6 +35,8 @@ interface Config {
   timezone: string;
   dailyPullAt: string;
   refreshMinutes: number;
+  /** Minutes after an event ends before it drops off the board. null keeps the whole day. */
+  hidePastAfterMinutes: number | null;
   espace: EspaceConfig;
   campuses: Record<string, CampusConfig>;
 }
@@ -102,6 +105,7 @@ function loadConfig(): Config {
     timezone: raw.timezone || "America/Los_Angeles",
     dailyPullAt: raw.dailyPullAt || "04:00",
     refreshMinutes: raw.refreshMinutes ?? 15,
+    hidePastAfterMinutes: raw.hidePastAfterMinutes === undefined ? 15 : raw.hidePastAfterMinutes,
     campuses: raw.campuses,
     espace: {
       token: process.env.ESPACE_TOKEN || e.token || "",
@@ -262,6 +266,7 @@ function boardPayload(key: string) {
     org: cfg.org || "",
     campus: c.label || key,
     timezone: tz,
+    hidePastAfterMinutes: c.hidePastAfterMinutes === undefined ? cfg.hidePastAfterMinutes : c.hidePastAfterMinutes,
     demo: DEMO || undefined,
     // Never show yesterday's list on today's board.
     events: s.date === today ? s.events : [],
