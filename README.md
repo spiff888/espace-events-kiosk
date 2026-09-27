@@ -75,7 +75,7 @@ Or without Compose:
 docker run -d --name campus-board --restart unless-stopped -p 8080:8080 \
   --env-file .env \
   -v "$PWD/config.json:/config/config.json:ro" -v campus-board-data:/data \
-  ghcr.io/OWNER/REPO:latest
+  ghcr.io/spiff888/espace-events-kiosk:latest
 ```
 
 **Node, any OS** (Node 18 or newer)

@@ -2,7 +2,7 @@ services:
   campus-board:
     build: .
     # Or use the published image instead of building:
-    # image: ghcr.io/OWNER/REPO:latest
+    # image: ghcr.io/spiff888/espace-events-kiosk:latest
     container_name: campus-board
     restart: unless-stopped
     ports:
