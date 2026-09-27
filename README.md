@@ -7,7 +7,7 @@ A lobby TV display that shows today's room bookings from **eSPACE Event Schedule
 - Three columns (Time, Event and Room). The current event is highlighted and the one after it is tagged as next.
 - Pulls from eSPACE once a day, then refreshes every 15 minutes to catch same-day changes (both configurable).
 - Caches the last good pull to disk, so the boards keep showing it if eSPACE or your internet goes down.
-- Runs on Windows, macOS, Linux or Docker (amd64 and arm64, so a Raspberry Pi works). It has no dependencies beyond Node 18+.
+- Runs on Windows, macOS, Linux or Docker (amd64 and arm64, so a Raspberry Pi works). Written in TypeScript, with no runtime dependencies beyond Node 18+.
 - Your eSPACE API token stays on your server and never reaches the TVs.
 
 > **Unofficial.** This project is not affiliated with or endorsed by Smart Church Solutions / eSPACE.
@@ -64,11 +64,13 @@ docker run -d --name campus-board --restart unless-stopped -p 8080:8080 \
 
 Or use `docker compose up -d` with the included `docker-compose.yml`.
 
-**Node, any OS**
+**Node, any OS** (Node 18 or newer)
 
 ```sh
-node server.js --pull-now   # one test pull; prints what eSPACE returned
-node server.js              # start the server on port 8080
+npm ci            # installs the TypeScript compiler (build-time only)
+npm run build     # compiles src/ to dist/
+npm run pull      # one test pull; prints what eSPACE returned
+npm start         # start the server on port 8080
 ```
 
 To run it as a service that starts on boot, use one of the files in `deploy/`:
@@ -104,8 +106,19 @@ Each board page reloads itself at 3am, so TVs pick up updates without anyone tou
 
 ## Matching your eSPACE data
 
-The eSPACE v2 field names are mapped in one function, `mapOccurrence()` in `server.js`, and the endpoint path and query parameters live in `config.json` under `espace`.
-If `node server.js --pull-now` returns no events, or events with missing names or rooms, compare one real response from Swagger against `mapOccurrence()` and adjust. If you find the correct mapping, please open a PR so it works out of the box for everyone.
+The eSPACE v2 field names are mapped in one function, `mapOccurrence()` in `src/server.ts`, and the endpoint path and query parameters live in `config.json` under `espace`.
+If `npm run pull` returns no events, or events with missing names or rooms, compare one real response from Swagger against `mapOccurrence()` and adjust. If you find the correct mapping, please open a PR so it works out of the box for everyone.
+
+## Development
+
+```sh
+npm ci
+npm run check     # type-check only
+npm run dev       # build and start
+```
+
+The server is `src/server.ts`. `npm run build` compiles it to `dist/server.js`, which is what Node and Docker run.
+The TV page, `public/index.html`, is plain HTML, CSS and JavaScript with no build step.
 
 ## Customizing the look
 

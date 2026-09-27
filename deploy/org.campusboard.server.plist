@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- macOS server: copy to /Library/LaunchDaemons/, then
+<!-- macOS server: run `npm ci && npm run build` in /usr/local/campus-board first, then copy to /Library/LaunchDaemons/, then
      sudo launchctl bootstrap system /Library/LaunchDaemons/org.campusboard.server.plist -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -8,7 +8,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/usr/local/bin/node</string>
-    <string>/usr/local/campus-board/server.js</string>
+    <string>/usr/local/campus-board/dist/server.js</string>
   </array>
   <key>WorkingDirectory</key><string>/usr/local/campus-board</string>
   <key>RunAtLoad</key><true/>

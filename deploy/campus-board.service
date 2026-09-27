@@ -1,4 +1,5 @@
-# Linux server: sudo cp campus-board.service /etc/systemd/system/
+# Linux server: run `npm ci && npm run build` in /opt/campus-board first.
+# Then: sudo cp campus-board.service /etc/systemd/system/
 # then: sudo systemctl daemon-reload && sudo systemctl enable --now campus-board
 [Unit]
 Description=Campus Board (eSPACE lobby displays)
@@ -7,7 +8,7 @@ Wants=network-online.target
 
 [Service]
 WorkingDirectory=/opt/campus-board
-ExecStart=/usr/bin/node /opt/campus-board/server.js
+ExecStart=/usr/bin/node /opt/campus-board/dist/server.js
 Restart=always
 RestartSec=10
 User=campusboard

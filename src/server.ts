@@ -1,72 +1,132 @@
-#!/usr/bin/env node
-// Campus Board — pulls today's eSPACE bookings and serves a lobby display per campus.
-// Zero dependencies. Node 18+ (Windows, macOS, Linux) or Docker.
+// Campus Board: pulls today's eSPACE bookings and serves a lobby display per campus.
+// No runtime dependencies. Node 18+ (Windows, macOS, Linux) or Docker.
 //
-//   node server.js                 start the server
-//   node server.js --pull-now      pull every campus once, print a summary, exit
+//   npm start          start the server
+//   npm run pull       pull every campus once, print a summary, exit
 //
 // TVs open  http://<server>:8080/board/<campus>   e.g. /board/main
 
-"use strict";
-const http = require("node:http");
-const fs = require("node:fs");
-const path = require("node:path");
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = __dirname;
+// ----------------------------------------------------------------- types ----
+interface CampusConfig {
+  label?: string;
+  locationId?: string | number;
+  timezone?: string;
+  hideRooms?: string[];
+}
+
+interface EspaceConfig {
+  token: string;
+  baseUrl: string;
+  eventsPath: string;
+  query: Record<string, string>;
+  onlyApproved: boolean;
+  onlyPublic: boolean;
+}
+
+interface Config {
+  org?: string;
+  port: number;
+  timezone: string;
+  dailyPullAt: string;
+  refreshMinutes: number;
+  espace: EspaceConfig;
+  campuses: Record<string, CampusConfig>;
+}
+
+/** One booking as the TV page receives it. */
+export interface BoardEvent {
+  title: string;
+  start: string; // ISO 8601
+  end: string;
+  rooms: string[];
+}
+
+interface MappedEvent extends BoardEvent {
+  approved: boolean;
+  public: boolean;
+}
+
+interface CampusState {
+  date: string | null;
+  events: BoardEvent[];
+  updated: string | null;
+  ok: boolean;
+  error: string | null;
+  lastAttempt?: string;
+  demo?: boolean;
+}
+
+/** Raw eSPACE record. Field names are unconfirmed, so every one is optional. */
+type EspaceOccurrence = Record<string, unknown>;
+
+// Compiled output lives in dist/, so the project root is one level up.
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CONFIG_PATH = process.env.CONFIG_PATH || path.join(ROOT, "config.json");
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, "data");
 const PUBLIC_DIR = path.join(ROOT, "public");
 
 // ---------------------------------------------------------------- config ----
-function loadConfig() {
+function loadConfig(): Config {
   if (!fs.existsSync(CONFIG_PATH)) {
     console.error(`No config found at ${CONFIG_PATH}. Copy config.example.json to config.json and edit it.`);
     process.exit(1);
   }
-  const c = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
-  c.port = Number(process.env.PORT || c.port || 8080);
-  c.timezone = c.timezone || "America/Los_Angeles";
-  c.dailyPullAt = c.dailyPullAt || "04:00";
-  c.refreshMinutes = c.refreshMinutes ?? 15;
-  c.espace = c.espace || {};
-  c.espace.token = process.env.ESPACE_TOKEN || c.espace.token || "";
-  c.espace.baseUrl = (c.espace.baseUrl || "https://api.espace.cool/api/v2").replace(/\/$/, "");
-  c.espace.eventsPath = c.espace.eventsPath || "/event/occurrences";
-  c.espace.query = c.espace.query || { startDate: "{date}", endDate: "{date}", locationId: "{locationId}" };
-  c.espace.onlyApproved = c.espace.onlyApproved ?? true;
-  c.espace.onlyPublic = c.espace.onlyPublic ?? false;
-  if (!c.campuses || !Object.keys(c.campuses).length) {
-    console.error("config.json needs at least one entry under \"campuses\".");
+  type RawConfig = Partial<Omit<Config, "espace">> & { espace?: Partial<EspaceConfig> };
+  const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8")) as RawConfig;
+  const e = raw.espace ?? {};
+  if (!raw.campuses || !Object.keys(raw.campuses).length) {
+    console.error('config.json needs at least one entry under "campuses".');
     process.exit(1);
   }
-  return c;
+  return {
+    org: raw.org,
+    port: Number(process.env.PORT || raw.port || 8080),
+    timezone: raw.timezone || "America/Los_Angeles",
+    dailyPullAt: raw.dailyPullAt || "04:00",
+    refreshMinutes: raw.refreshMinutes ?? 15,
+    campuses: raw.campuses,
+    espace: {
+      token: process.env.ESPACE_TOKEN || e.token || "",
+      baseUrl: (e.baseUrl || "https://api.espace.cool/api/v2").replace(/\/$/, ""),
+      eventsPath: e.eventsPath || "/event/occurrences",
+      query: e.query || { startDate: "{date}", endDate: "{date}", locationId: "{locationId}" },
+      onlyApproved: e.onlyApproved ?? true,
+      onlyPublic: e.onlyPublic ?? false,
+    },
+  };
 }
 const cfg = loadConfig();
 const DEMO = !cfg.espace.token || cfg.espace.token.startsWith("PASTE");
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // ----------------------------------------------------------------- time -----
-const tzOf = key => cfg.campuses[key].timezone || cfg.timezone;
-const todayIn = tz => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date()); // YYYY-MM-DD
-const hhmmIn = tz => new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date());
+const tzOf = (key: string): string => cfg.campuses[key].timezone || cfg.timezone;
+const todayIn = (tz: string): string => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date()); // YYYY-MM-DD
+const hhmmIn = (tz: string): string => new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date());
 
 // ---------------------------------------------------------------- state -----
 // state[campus] = { date, events, updated, ok, error, lastAttempt }
-const state = {};
+const state: Record<string, CampusState> = {};
 for (const key of Object.keys(cfg.campuses)) {
   state[key] = readCache(key) || { date: null, events: [], updated: null, ok: false, error: null };
 }
-function cacheFile(key) { return path.join(DATA_DIR, `${key}.json`); }
-function readCache(key) {
-  try { return JSON.parse(fs.readFileSync(cacheFile(key), "utf8")); } catch { return null; }
+function cacheFile(key: string): string { return path.join(DATA_DIR, `${key}.json`); }
+function readCache(key: string): CampusState | null {
+  try { return JSON.parse(fs.readFileSync(cacheFile(key), "utf8")) as CampusState; } catch { return null; }
 }
-function writeCache(key, s) {
-  try { fs.writeFileSync(cacheFile(key), JSON.stringify(s, null, 2)); } catch (e) { log(key, `cache write failed: ${e.message}`); }
+function writeCache(key: string, s: CampusState): void {
+  try { fs.writeFileSync(cacheFile(key), JSON.stringify(s, null, 2)); } catch (e) { log(key, `cache write failed: ${errMsg(e)}`); }
 }
-function log(key, msg) { console.log(`${new Date().toISOString()} [${key}] ${msg}`); }
+const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+function log(key: string, msg: string): void { console.log(`${new Date().toISOString()} [${key}] ${msg}`); }
 
 // ---------------------------------------------------------------- eSPACE ----
-async function pull(key) {
+async function pull(key: string): Promise<CampusState> {
   const campus = cfg.campuses[key];
   const tz = tzOf(key);
   const date = todayIn(tz);
@@ -77,7 +137,7 @@ async function pull(key) {
   }
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(cfg.espace.query)) {
-    q.set(k, String(v).replace("{date}", date).replace("{locationId}", campus.locationId ?? ""));
+    q.set(k, String(v).replace("{date}", date).replace("{locationId}", String(campus.locationId ?? "")));
   }
   const url = `${cfg.espace.baseUrl}${cfg.espace.eventsPath}?${q}`;
   try {
@@ -87,44 +147,58 @@ async function pull(key) {
     });
     if (r.status === 401) throw new Error("eSPACE rejected the token (401). Request a new one and update config.json.");
     if (!r.ok) throw new Error(`eSPACE returned HTTP ${r.status}`);
-    const raw = await r.json();
-    const list = Array.isArray(raw) ? raw : raw.Data || raw.data || raw.Items || raw.items || [];
+    const raw = (await r.json()) as unknown;
+    const list: EspaceOccurrence[] = Array.isArray(raw)
+      ? raw
+      : ((raw as Record<string, unknown>)?.Data ?? (raw as Record<string, unknown>)?.data ??
+         (raw as Record<string, unknown>)?.Items ?? (raw as Record<string, unknown>)?.items ?? []) as EspaceOccurrence[];
     const events = list
       .map(mapOccurrence)
-      .filter(e => e && e.title && e.start && e.end)
+      .filter((e): e is MappedEvent => e !== null)
       .filter(e => !cfg.espace.onlyApproved || e.approved)
       .filter(e => !cfg.espace.onlyPublic || e.public)
       .filter(e => !(campus.hideRooms || []).some(h => e.rooms.includes(h)))
-      .map(({ title, start, end, rooms }) => ({ title, start, end, rooms }))
-      .sort((a, b) => new Date(a.start) - new Date(b.start));
+      .map(({ title, start, end, rooms }): BoardEvent => ({ title, start, end, rooms }))
+      .sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
     state[key] = { date, events, updated: new Date().toISOString(), ok: true, error: null, lastAttempt: state[key].lastAttempt };
     writeCache(key, state[key]);
     log(key, `pulled ${events.length} events for ${date}`);
   } catch (e) {
     // Keep showing the last good pull for today; flag it as stale.
     state[key].ok = false;
-    state[key].error = e.message;
-    log(key, `pull failed: ${e.message}`);
+    state[key].error = errMsg(e);
+    log(key, `pull failed: ${errMsg(e)}`);
   }
   return state[key];
 }
 
 // The one place that knows eSPACE's field names.
 // Check one real response in Swagger (https://api.espace.cool/swagger/ui/index) and adjust.
-function mapOccurrence(o) {
-  const spaces = o.Spaces || o.spaces || o.Items || o.items || [];
-  const status = String(o.Status || o.OccurrenceStatus || o.status || "Approved");
+// Once confirmed, replace EspaceOccurrence with a real interface and the compiler
+// will flag every field name that doesn't match.
+const pick = (o: EspaceOccurrence, ...keys: string[]): unknown => {
+  for (const k of keys) if (o[k] != null && o[k] !== "") return o[k];
+  return undefined;
+};
+
+function mapOccurrence(o: EspaceOccurrence): MappedEvent | null {
+  const title = pick(o, "EventName", "Name", "Title", "name", "title");
+  const start = pick(o, "EventStart", "StartDate", "Start", "startDate", "start"); // event time, not setup-inclusive
+  const end = pick(o, "EventEnd", "EndDate", "End", "endDate", "end");
+  if (typeof title !== "string" || typeof start !== "string" || typeof end !== "string") return null;
+  const spaces = (pick(o, "Spaces", "spaces", "Items", "items") ?? []) as EspaceOccurrence[];
+  const status = String(pick(o, "Status", "OccurrenceStatus", "status") ?? "Approved");
   return {
-    title: o.EventName || o.Name || o.Title || o.name || o.title,
-    start: o.EventStart || o.StartDate || o.Start || o.startDate || o.start,  // event time, not setup-inclusive
-    end: o.EventEnd || o.EndDate || o.End || o.endDate || o.end,
-    rooms: spaces.map(s => s.Name || s.SpaceName || s.name).filter(Boolean),
+    title,
+    start,
+    end,
+    rooms: spaces.map(s => pick(s, "Name", "SpaceName", "name")).filter((n): n is string => typeof n === "string"),
     approved: /approved|confirmed/i.test(status),
-    public: o.IsPublic ?? o.isPublic ?? o.Public ?? true,
+    public: pick(o, "IsPublic", "isPublic", "Public") !== false,
   };
 }
 
-async function pullAll(reason) {
+async function pullAll(reason: string): Promise<void> {
   console.log(`${new Date().toISOString()} pulling all campuses (${reason})`);
   await Promise.all(Object.keys(cfg.campuses).map(pull));
 }
@@ -133,8 +207,8 @@ async function pullAll(reason) {
 // 1. A full pull at dailyPullAt (campus local time).
 // 2. Optional refresh every refreshMinutes to catch same-day changes (0 = daily only).
 // 3. An automatic pull whenever a campus rolls over to a new date.
-function startSchedule() {
-  const lastDaily = {};
+function startSchedule(): void {
+  const lastDaily: Record<string, string> = {};
   let minutes = 0;
   setInterval(() => {
     minutes++;
@@ -143,7 +217,7 @@ function startSchedule() {
       const date = todayIn(tz);
       const due =
         (hhmmIn(tz) === cfg.dailyPullAt && lastDaily[key] !== date) ||
-        (state[key].date !== date && Date.now() - new Date(state[key].lastAttempt || 0) > 5 * 60000) ||
+        (state[key].date !== date && Date.now() - new Date(state[key].lastAttempt ?? 0).getTime() > 5 * 60000) ||
         (cfg.refreshMinutes > 0 && minutes % cfg.refreshMinutes === 0);
       if (hhmmIn(tz) === cfg.dailyPullAt) lastDaily[key] = date;
       if (due) pull(key);
@@ -152,12 +226,18 @@ function startSchedule() {
 }
 
 // ---------------------------------------------------------------- server ----
-const send = (res, status, body, type = "application/json; charset=utf-8", extra = {}) => {
+const send = (
+  res: http.ServerResponse,
+  status: number,
+  body: unknown,
+  type = "application/json; charset=utf-8",
+  extra: Record<string, string> = {},
+): void => {
   res.writeHead(status, { "Content-Type": type, "Cache-Control": "no-store", ...extra });
   res.end(typeof body === "string" || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 };
 
-function boardPayload(key) {
+function boardPayload(key: string) {
   const c = cfg.campuses[key];
   const s = state[key];
   const tz = tzOf(key);
@@ -175,7 +255,7 @@ function boardPayload(key) {
   };
 }
 
-function indexPage() {
+function indexPage(): string {
   const links = Object.entries(cfg.campuses)
     .map(([k, c]) => `<li><a href="/board/${k}">${c.label || k}</a> <code>/board/${k}</code></li>`)
     .join("");
@@ -188,7 +268,7 @@ function indexPage() {
 
 let lastManual = 0;
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, "http://x");
+  const url = new URL(req.url ?? "/", "http://x");
   const p = url.pathname.replace(/\/+$/, "") || "/";
 
   if (p === "/") return send(res, 200, indexPage(), "text/html; charset=utf-8");
@@ -201,7 +281,7 @@ const server = http.createServer(async (req, res) => {
 
   const api = p.match(/^\/api\/today\/([\w-]+)$/);
   if (api || p === "/api/today") {
-    const key = api ? api[1] : url.searchParams.get("campus");
+    const key = api ? api[1] : url.searchParams.get("campus") ?? "";
     if (!cfg.campuses[key]) return send(res, 404, { error: `Unknown campus "${key}".` });
     return send(res, 200, boardPayload(key), undefined, { "Access-Control-Allow-Origin": "*" });
   }
@@ -227,7 +307,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 // ------------------------------------------------------------------ main ----
-(async () => {
+void (async () => {
   if (process.argv.includes("--pull-now")) {
     await pullAll("--pull-now");
     for (const k of Object.keys(cfg.campuses)) {

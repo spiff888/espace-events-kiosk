@@ -1,4 +1,6 @@
 data/
 config.json
 node_modules/
-*.png
+dist/
+.git/
+docs/

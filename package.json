@@ -2,11 +2,21 @@
   "name": "campus-board",
   "version": "0.1.0",
   "description": "Lobby TV day board for churches using eSPACE Event Scheduler (unofficial)",
-  "main": "server.js",
+  "type": "module",
+  "main": "dist/server.js",
   "scripts": {
-    "start": "node server.js",
-    "pull": "node server.js --pull-now"
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "start": "node dist/server.js",
+    "pull": "node dist/server.js --pull-now",
+    "dev": "tsc && node dist/server.js"
   },
-  "engines": { "node": ">=18" },
-  "license": "MIT"
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "typescript": "^5.9.3"
+  }
 }
