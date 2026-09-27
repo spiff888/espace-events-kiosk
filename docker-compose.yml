@@ -1,17 +1,16 @@
 services:
   campus-board:
     build: .
+    # Or use the published image instead of building:
+    # image: ghcr.io/OWNER/REPO:latest
     container_name: campus-board
     restart: unless-stopped
     ports:
       - "8080:8080"
+    env_file: .env          # ESPACE_TOKEN and TZ
     volumes:
       - ./config.json:/config/config.json:ro
       - board-data:/data
-    environment:
-      - TZ=America/Los_Angeles
-      # Or keep the token out of config.json:
-      # - ESPACE_TOKEN=${ESPACE_TOKEN}
 
 volumes:
   board-data:

@@ -6,7 +6,6 @@
   "refreshMinutes": 15,
 
   "espace": {
-    "token": "PASTE_JWT_FROM_v2/requesttoken",
     "baseUrl": "https://api.espace.cool/api/v2",
     "eventsPath": "/event/occurrences",
     "query": { "startDate": "{date}", "endDate": "{date}", "locationId": "{locationId}" },

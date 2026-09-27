@@ -35,12 +35,20 @@ One server can run every campus. Each TV opens its own campus URL in a full-scre
 
 ### 2. Configure
 
+Settings are split so the one secret never sits next to anything you'd share:
+
+| File | Holds | In Git? |
+|---|---|---|
+| `.env` | `ESPACE_TOKEN` (and `TZ`) | No, ignored |
+| `config.json` | Church name, schedule, filters, campuses | No, ignored |
+| `.env.example`, `config.example.json` | Templates with no secrets | Yes |
+
 ```sh
-cp config.example.json config.json
+cp .env.example .env                 # paste the token after ESPACE_TOKEN=
+cp config.example.json config.json   # church name + one entry per campus
 ```
 
-Edit `config.json`: paste the token, set your church name, and add one entry per campus using that campus's eSPACE location ID.
-With no token, the server runs in **demo mode** and shows sample events, which is handy for testing TVs.
+Each campus needs its eSPACE location ID. With no token, the server runs in **demo mode** and shows sample events, which is handy for testing TVs.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -57,12 +65,17 @@ With no token, the server runs in **demo mode** and shows sample events, which i
 **Docker (recommended)**
 
 ```sh
-docker run -d --name campus-board --restart unless-stopped -p 8080:8080 \
-  -v "$PWD/config.json:/config/config.json:ro" -v campus-board-data:/data \
-  -e TZ=America/Los_Angeles ghcr.io/OWNER/REPO:latest
+docker compose up -d
 ```
 
-Or use `docker compose up -d` with the included `docker-compose.yml`.
+Or without Compose:
+
+```sh
+docker run -d --name campus-board --restart unless-stopped -p 8080:8080 \
+  --env-file .env \
+  -v "$PWD/config.json:/config/config.json:ro" -v campus-board-data:/data \
+  ghcr.io/OWNER/REPO:latest
+```
 
 **Node, any OS** (Node 18 or newer)
 
@@ -116,6 +129,8 @@ npm ci
 npm run check     # type-check only
 npm run dev       # build and start
 ```
+
+The server reads `.env` itself when run with Node, so the token lives in the same place with or without Docker. A real environment variable always wins over `.env`.
 
 The server is `src/server.ts`. `npm run build` compiles it to `dist/server.js`, which is what Node and Docker run.
 The TV page, `public/index.html`, is plain HTML, CSS and JavaScript with no build step.

@@ -66,6 +66,19 @@ type EspaceOccurrence = Record<string, unknown>;
 
 // Compiled output lives in dist/, so the project root is one level up.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+// Docker Compose passes .env in as environment variables. When run directly with Node,
+// read .env ourselves so the token lives in the same place either way.
+loadDotEnv(path.join(ROOT, ".env"));
+function loadDotEnv(file: string): void {
+  if (!fs.existsSync(file)) return;
+  for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/i);
+    if (!m || line.trimStart().startsWith("#")) continue;
+    const value = m[2].replace(/^(["'])(.*)\1$/, "$2");
+    if (process.env[m[1]] === undefined) process.env[m[1]] = value;
+  }
+}
 const CONFIG_PATH = process.env.CONFIG_PATH || path.join(ROOT, "config.json");
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, "data");
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -101,7 +114,10 @@ function loadConfig(): Config {
   };
 }
 const cfg = loadConfig();
-const DEMO = !cfg.espace.token || cfg.espace.token.startsWith("PASTE");
+const DEMO = !cfg.espace.token;
+if (!DEMO && fs.existsSync(CONFIG_PATH) && /"token"\s*:/.test(fs.readFileSync(CONFIG_PATH, "utf8")) && !process.env.ESPACE_TOKEN) {
+  console.warn("Warning: the eSPACE token is in config.json. Move it to .env (ESPACE_TOKEN=...) so it can't be shared by accident.");
+}
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // ----------------------------------------------------------------- time -----
@@ -145,7 +161,7 @@ async function pull(key: string): Promise<CampusState> {
       headers: { Authorization: `Bearer ${cfg.espace.token}`, Accept: "application/json" },
       signal: AbortSignal.timeout(30000),
     });
-    if (r.status === 401) throw new Error("eSPACE rejected the token (401). Request a new one and update config.json.");
+    if (r.status === 401) throw new Error("eSPACE rejected the token (401). Request a new one and update ESPACE_TOKEN in .env.");
     if (!r.ok) throw new Error(`eSPACE returned HTTP ${r.status}`);
     const raw = (await r.json()) as unknown;
     const list: EspaceOccurrence[] = Array.isArray(raw)
