@@ -40,6 +40,9 @@ interface CampusConfig {
 }
 
 interface EspaceConfig {
+  /** API key (a UUID) generated in eSPACE. The server trades it for a JWT itself. */
+  apiKey: string;
+  /** A JWT pasted directly. Optional; apiKey is simpler. */
   token: string;
   baseUrl: string;
   eventsPath: string;
@@ -67,6 +70,7 @@ export interface BoardEvent {
   start: string; // ISO 8601
   end: string;
   rooms: string[];
+  allDay?: boolean;
 }
 
 interface MappedEvent extends BoardEvent {
@@ -84,8 +88,37 @@ interface CampusState {
   demo?: boolean;
 }
 
-/** Raw eSPACE record. Field names are unconfirmed, so every one is optional. */
-type EspaceOccurrence = Record<string, unknown>;
+/**
+ * One record from GET /api/v2/event/occurrences, per eSPACE's published Swagger spec
+ * (https://api.espace.cool/v2/swagger). Only the fields this app reads are listed.
+ * Contacts are deliberately left out so names and emails never reach a public screen.
+ */
+interface EspaceOccurrence {
+  OccurrenceId?: number;
+  EventId?: number;
+  EventName?: string;
+  EventStart?: string;     // occurrence start (excludes setup)
+  EventEnd?: string;       // occurrence end (excludes teardown)
+  IsAllDay?: boolean;
+  OccurrenceStatus?: string;
+  EventStatus?: string;
+  IsFinalApproved?: boolean;
+  IsPublic?: boolean;
+  Items?: EspaceOccurrenceItem[];
+}
+
+interface EspaceOccurrenceItem {
+  ItemId?: number;
+  ItemType?: string;       // "Space" | "Resource" | "Service"
+  Name?: string;
+}
+
+/** GET /api/v2/ministry/locations */
+export interface EspaceLocation {
+  Id: number;
+  Name: string;
+  LocationCode?: string;
+}
 
 // Compiled output lives in dist/, so the project root is one level up.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -129,19 +162,21 @@ function loadConfig(): Config {
     campuses: raw.campuses,
     theme: raw.theme ?? {},
     espace: {
+      apiKey: process.env.ESPACE_API_KEY || e.apiKey || "",
       token: process.env.ESPACE_TOKEN || e.token || "",
       baseUrl: (e.baseUrl || "https://api.espace.cool/api/v2").replace(/\/$/, ""),
       eventsPath: e.eventsPath || "/event/occurrences",
-      query: e.query || { startDate: "{date}", endDate: "{date}", locationId: "{locationId}" },
+      // endDate is "ends on/before", so ask through tomorrow and keep only events touching today.
+      query: e.query || { startDate: "{date}", endDate: "{nextDate}", locationIds: "{locationId}", topX: "2000" },
       onlyApproved: e.onlyApproved ?? true,
       onlyPublic: e.onlyPublic ?? false,
     },
   };
 }
 const cfg = loadConfig();
-const DEMO = !cfg.espace.token;
-if (!DEMO && fs.existsSync(CONFIG_PATH) && /"token"\s*:/.test(fs.readFileSync(CONFIG_PATH, "utf8")) && !process.env.ESPACE_TOKEN) {
-  console.warn("Warning: the eSPACE token is in config.json. Move it to .env (ESPACE_TOKEN=...) so it can't be shared by accident.");
+const DEMO = !cfg.espace.token && !cfg.espace.apiKey;
+if (!DEMO && fs.existsSync(CONFIG_PATH) && /"(token|apiKey)"\s*:/.test(fs.readFileSync(CONFIG_PATH, "utf8")) && !process.env.ESPACE_TOKEN) {
+  console.warn("Warning: an eSPACE key or token is in config.json. Move it to .env (ESPACE_API_KEY=...) so it can't be shared by accident.");
 }
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -177,29 +212,22 @@ async function pull(key: string): Promise<CampusState> {
     return state[key];
   }
   const q = new URLSearchParams();
+  const nextDate = addDays(date, 1);
   for (const [k, v] of Object.entries(cfg.espace.query)) {
-    q.set(k, String(v).replace("{date}", date).replace("{locationId}", String(campus.locationId ?? "")));
+    q.set(k, String(v).replace("{date}", date).replace("{nextDate}", nextDate).replace("{locationId}", String(campus.locationId ?? "")));
   }
   const url = `${cfg.espace.baseUrl}${cfg.espace.eventsPath}?${q}`;
   try {
-    const r = await fetch(url, {
-      headers: { Authorization: `Bearer ${cfg.espace.token}`, Accept: "application/json" },
-      signal: AbortSignal.timeout(30000),
-    });
-    if (r.status === 401) throw new Error("eSPACE rejected the token (401). Request a new one and update ESPACE_TOKEN in .env.");
-    if (!r.ok) throw new Error(`eSPACE returned HTTP ${r.status}`);
-    const raw = (await r.json()) as unknown;
-    const list: EspaceOccurrence[] = Array.isArray(raw)
-      ? raw
-      : ((raw as Record<string, unknown>)?.Data ?? (raw as Record<string, unknown>)?.data ??
-         (raw as Record<string, unknown>)?.Items ?? (raw as Record<string, unknown>)?.items ?? []) as EspaceOccurrence[];
+    const raw = await espaceGet(url);
+    const list: EspaceOccurrence[] = Array.isArray(raw) ? (raw as EspaceOccurrence[]) : [];
     const events = list
       .map(mapOccurrence)
       .filter((e): e is MappedEvent => e !== null)
+      .filter(e => e.start.slice(0, 10) <= date && e.end.slice(0, 10) >= date) // touches today
       .filter(e => !cfg.espace.onlyApproved || e.approved)
       .filter(e => !cfg.espace.onlyPublic || e.public)
       .filter(e => !(campus.hideRooms || []).some(h => e.rooms.includes(h)))
-      .map(({ title, start, end, rooms }): BoardEvent => ({ title, start, end, rooms }))
+      .map(({ title, start, end, rooms, allDay }): BoardEvent => ({ title, start, end, rooms, ...(allDay ? { allDay } : {}) }))
       .sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
     state[key] = { date, events, updated: new Date().toISOString(), ok: true, error: null, lastAttempt: state[key].lastAttempt };
     writeCache(key, state[key]);
@@ -214,29 +242,64 @@ async function pull(key: string): Promise<CampusState> {
 }
 
 // The one place that knows eSPACE's field names.
-// Check one real response in Swagger (https://api.espace.cool/swagger/ui/index) and adjust.
-// Once confirmed, replace EspaceOccurrence with a real interface and the compiler
-// will flag every field name that doesn't match.
-const pick = (o: EspaceOccurrence, ...keys: string[]): unknown => {
-  for (const k of keys) if (o[k] != null && o[k] !== "") return o[k];
-  return undefined;
+function mapOccurrence(o: EspaceOccurrence): MappedEvent | null {
+  if (!o.EventName || !o.EventStart || !o.EventEnd) return null;
+  return {
+    title: o.EventName,
+    start: o.EventStart,
+    end: o.EventEnd,
+    allDay: o.IsAllDay === true,
+    // Items mixes rooms with equipment and services; only rooms belong on the board.
+    rooms: (o.Items ?? [])
+      .filter(i => (i.ItemType ?? "Space").toLowerCase() === "space")
+      .map(i => i.Name)
+      .filter((n): n is string => typeof n === "string" && n.trim() !== ""),
+    approved: o.IsFinalApproved ?? /approved|confirmed/i.test(o.OccurrenceStatus ?? o.EventStatus ?? ""),
+    public: o.IsPublic !== false,
+  };
+}
+
+const addDays = (ymd: string, n: number): string => {
+  const d = new Date(`${ymd}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
 };
 
-function mapOccurrence(o: EspaceOccurrence): MappedEvent | null {
-  const title = pick(o, "EventName", "Name", "Title", "name", "title");
-  const start = pick(o, "EventStart", "StartDate", "Start", "startDate", "start"); // event time, not setup-inclusive
-  const end = pick(o, "EventEnd", "EndDate", "End", "endDate", "end");
-  if (typeof title !== "string" || typeof start !== "string" || typeof end !== "string") return null;
-  const spaces = (pick(o, "Spaces", "spaces", "Items", "items") ?? []) as EspaceOccurrence[];
-  const status = String(pick(o, "Status", "OccurrenceStatus", "status") ?? "Approved");
-  return {
-    title,
-    start,
-    end,
-    rooms: spaces.map(s => pick(s, "Name", "SpaceName", "name")).filter((n): n is string => typeof n === "string"),
-    approved: /approved|confirmed/i.test(status),
-    public: pick(o, "IsPublic", "isPublic", "Public") !== false,
-  };
+// ------------------------------------------------------------ eSPACE auth ----
+// eSPACE issues a JWT (valid about a year) in exchange for an API key. We request it
+// on first use, keep it in memory only, and request a new one if eSPACE ever answers 401.
+let jwt: string | null = null;
+
+async function getToken(forceNew = false): Promise<string> {
+  if (cfg.espace.token && !cfg.espace.apiKey) return cfg.espace.token;
+  if (jwt && !forceNew) return jwt;
+  const r = await fetch(`${cfg.espace.baseUrl}/requesttoken`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ apiKey: cfg.espace.apiKey }),
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!r.ok) throw new Error(`eSPACE didn't accept the API key (HTTP ${r.status}). Check ESPACE_API_KEY in .env.`);
+  const text = (await r.text()).trim();
+  const token = text.startsWith('"') ? (JSON.parse(text) as string) : text; // the spec returns a JSON string
+  if (!token) throw new Error("eSPACE returned an empty token.");
+  jwt = token;
+  return jwt;
+}
+
+async function espaceGet(url: string): Promise<unknown> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const token = await getToken(attempt > 0);
+    const r = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(30000),
+    });
+    if (r.status === 401 && attempt === 0 && cfg.espace.apiKey) continue; // token expired: get a new one once
+    if (r.status === 401) throw new Error("eSPACE rejected the credentials (401). Check ESPACE_API_KEY in .env.");
+    if (!r.ok) throw new Error(`eSPACE returned HTTP ${r.status}`);
+    return r.json();
+  }
+  throw new Error("unreachable");
 }
 
 async function pullAll(reason: string): Promise<void> {
@@ -385,6 +448,16 @@ const server = http.createServer(async (req, res) => {
 
 // ------------------------------------------------------------------ main ----
 void (async () => {
+  if (process.argv.includes("--locations")) {
+    if (DEMO) { console.error("Set ESPACE_API_KEY in .env first."); process.exit(1); }
+    try {
+      const raw = await espaceGet(`${cfg.espace.baseUrl}/ministry/locations`);
+      const list = (Array.isArray(raw) ? raw : [raw]) as EspaceLocation[];
+      console.log("eSPACE locations (use the Id as locationId in config.json):\n");
+      for (const l of list) console.log(`  ${String(l.Id).padEnd(8)} ${l.Name}${l.LocationCode ? `  (${l.LocationCode})` : ""}`);
+      process.exit(0);
+    } catch (e) { console.error(errMsg(e)); process.exit(1); }
+  }
   if (process.argv.includes("--pull-now")) {
     await pullAll("--pull-now");
     for (const k of Object.keys(cfg.campuses)) {

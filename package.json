@@ -9,6 +9,7 @@
     "check": "tsc --noEmit",
     "start": "node dist/server.js",
     "pull": "node dist/server.js --pull-now",
+    "locations": "node dist/server.js --locations",
     "dev": "tsc && node dist/server.js"
   },
   "engines": {

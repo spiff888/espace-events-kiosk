@@ -8,7 +8,7 @@ A lobby TV display that shows today's room bookings from **eSPACE Event Schedule
 - Pulls from eSPACE once a day, then refreshes every 15 minutes to catch same-day changes (both configurable).
 - Caches the last good pull to disk, so the boards keep showing it if eSPACE or your internet goes down.
 - Runs on Windows, macOS, Linux or Docker (amd64 and arm64, so a Raspberry Pi works). Written in TypeScript, with no runtime dependencies beyond Node 18+.
-- Your eSPACE API token stays on your server and never reaches the TVs.
+- Your eSPACE API key stays on your server and never reaches the TVs.
 
 > **Unofficial.** This project is not affiliated with or endorsed by Smart Church Solutions / eSPACE.
 > You need an eSPACE subscription tier that includes API access (check Settings > Other > Billing > Manage).
@@ -26,12 +26,11 @@ One server can run every campus. Each TV opens its own campus URL in a full-scre
 
 ## Quick start
 
-### 1. Get an eSPACE token
+### 1. Get an eSPACE API key
 
-1. Create a dedicated eSPACE user for this, with read-only access to the calendars you want to show.
-   If a staff member's personal login is used and they change their password, every board goes blank.
-2. Open the [eSPACE API Swagger page](https://api.espace.cool/swagger/ui/index) and POST that user's credentials to `v2/requesttoken`.
-3. Copy the returned JWT (without the quotes). It lasts about a year, or until that user's email or password changes.
+1. In eSPACE, create an API key (a long code like `1b4e28ba-2fa1-11d2-883f-0016d3cca427`). eSPACE's support article **"APIv2 | Keys & Tokens"** shows where.
+   Tie it to a dedicated eSPACE user if you can, so a staff member leaving doesn't take the boards down with them.
+2. That's all. The server trades the key for an access token itself and renews it if it ever expires. Nobody needs to open eSPACE's Swagger page.
 
 ### 2. Configure
 
@@ -39,16 +38,17 @@ Settings are split so the one secret never sits next to anything you'd share:
 
 | File | Holds | In Git? |
 |---|---|---|
-| `.env` | `ESPACE_TOKEN` (and `TZ`) | No, ignored |
+| `.env` | `ESPACE_API_KEY` (and `TZ`) | No, ignored |
 | `config.json` | Church name, schedule, filters, campuses | No, ignored |
 | `.env.example`, `config.example.json` | Templates with no secrets | Yes |
 
 ```sh
-cp .env.example .env                 # paste the token after ESPACE_TOKEN=
+cp .env.example .env                 # paste the key after ESPACE_API_KEY=
 cp config.example.json config.json   # church name + one entry per campus
 ```
 
-Each campus needs its eSPACE location ID. With no token, the server runs in **demo mode** and shows sample events, which is handy for testing TVs.
+Each campus needs its eSPACE location ID. To list them, add your key to `.env` and run `npm run locations`
+(with Docker: `docker compose run --rm campus-board node dist/server.js --locations`). With no key, the server runs in **demo mode** and shows sample events, which is handy for testing TVs.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -118,10 +118,18 @@ Each board page reloads itself at 3am, so TVs pick up updates without anyone tou
 | `/health` | `200` when every campus pulled today, `503` otherwise. Point your RMM or uptime monitor here |
 | `POST /api/refresh` | Pull now (limited to once a minute) |
 
-## Matching your eSPACE data
+## How eSPACE data is used
 
-The eSPACE v2 field names are mapped in one function, `mapOccurrence()` in `src/server.ts`, and the endpoint path and query parameters live in `config.json` under `espace`.
-If `npm run pull` returns no events, or events with missing names or rooms, compare one real response from Swagger against `mapOccurrence()` and adjust. If you find the correct mapping, please open a PR so it works out of the box for everyone.
+Campus Board reads `GET /api/v2/event/occurrences` from eSPACE's public API ([spec](https://api.espace.cool/swagger/ui/index)), filtered by `locationIds` and today's date. From each occurrence it shows:
+
+| Board | eSPACE field |
+|---|---|
+| Time | `EventStart`, `EventEnd` (event time, not setup or teardown); `IsAllDay` shows "All day" |
+| Event | `EventName` |
+| Room | `Items` where `ItemType` is `Space` (equipment and services are left out) |
+| Shown at all | `IsFinalApproved` (with `onlyApproved`), `IsPublic` (with `onlyPublic`) |
+
+Contact names, emails and phone numbers are never read, so they can't end up on a public screen. The mapping lives in `mapOccurrence()` in `src/server.ts`.
 
 ## Development
 
@@ -131,7 +139,7 @@ npm run check     # type-check only
 npm run dev       # build and start
 ```
 
-The server reads `.env` itself when run with Node, so the token lives in the same place with or without Docker. A real environment variable always wins over `.env`.
+The server reads `.env` itself when run with Node, so the key lives in the same place with or without Docker. A real environment variable always wins over `.env`.
 
 The server is `src/server.ts`. `npm run build` compiles it to `dist/server.js`, which is what Node and Docker run.
 The TV page, `public/index.html`, is plain HTML, CSS and JavaScript with no build step.

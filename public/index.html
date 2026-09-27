@@ -262,7 +262,7 @@
               : e.state.includes("next") ? `<span class="tag">Next</span>` : "";
     const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
     return `<li class="row ${e.state}">
-      <span class="time">${fmtTime(e.start)}<small>until ${fmtTime(e.end)}</small></span>
+      <span class="time">${e.allDay ? "All day" : `${fmtTime(e.start)}<small>until ${fmtTime(e.end)}</small>`}</span>
       <span class="title">${esc(e.title)}${tag}</span>
       <span class="room">${esc((e.rooms || []).join(", "))}</span>
     </li>`;
