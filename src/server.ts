@@ -219,7 +219,8 @@ async function pull(key: string): Promise<CampusState> {
   const url = `${cfg.espace.baseUrl}${cfg.espace.eventsPath}?${q}`;
   try {
     const raw = await espaceGet(url);
-    const list: EspaceOccurrence[] = Array.isArray(raw) ? (raw as EspaceOccurrence[]) : [];
+    if (!Array.isArray(raw)) throw new Error("eSPACE sent an unexpected reply for events (not a list).");
+    const list = raw as EspaceOccurrence[];
     const events = list
       .map(mapOccurrence)
       .filter((e): e is MappedEvent => e !== null)
@@ -281,7 +282,9 @@ async function getToken(forceNew = false): Promise<string> {
   });
   if (!r.ok) throw new Error(`eSPACE didn't accept the API key (HTTP ${r.status}). Check ESPACE_API_KEY in .env.`);
   const text = (await r.text()).trim();
-  const token = text.startsWith('"') ? (JSON.parse(text) as string) : text; // the spec returns a JSON string
+  let token = text;
+  if (text.startsWith('"')) token = JSON.parse(text) as string;           // plain JSON string (what eSPACE sends today)
+  else if (text.startsWith("{")) token = String(unwrap(JSON.parse(text)) ?? ""); // enveloped, just in case
   if (!token) throw new Error("eSPACE returned an empty token.");
   jwt = token;
   return jwt;
@@ -297,9 +300,23 @@ async function espaceGet(url: string): Promise<unknown> {
     if (r.status === 401 && attempt === 0 && cfg.espace.apiKey) continue; // token expired: get a new one once
     if (r.status === 401) throw new Error("eSPACE rejected the credentials (401). Check ESPACE_API_KEY in .env.");
     if (!r.ok) throw new Error(`eSPACE returned HTTP ${r.status}`);
-    return r.json();
+    return unwrap(await r.json());
   }
   throw new Error("unreachable");
+}
+
+/**
+ * eSPACE wraps replies in an envelope: { IsSuccessStatusCode, Message, Data }.
+ * (Its Swagger spec doesn't show this; confirmed against a live account.)
+ * Returns Data, or throws eSPACE's own message when it reports a failure.
+ */
+function unwrap(body: unknown): unknown {
+  if (body && typeof body === "object" && !Array.isArray(body) && "Data" in body) {
+    const env = body as { IsSuccessStatusCode?: boolean; Message?: string | null; Data: unknown };
+    if (env.IsSuccessStatusCode === false) throw new Error(`eSPACE reported an error: ${env.Message ?? "no details"}`);
+    return env.Data;
+  }
+  return body;
 }
 
 async function pullAll(reason: string): Promise<void> {
@@ -452,7 +469,8 @@ void (async () => {
     if (DEMO) { console.error("Set ESPACE_API_KEY in .env first."); process.exit(1); }
     try {
       const raw = await espaceGet(`${cfg.espace.baseUrl}/ministry/locations`);
-      const list = (Array.isArray(raw) ? raw : [raw]) as EspaceLocation[];
+      if (!Array.isArray(raw)) throw new Error("eSPACE sent an unexpected reply for locations (not a list).");
+      const list = raw as EspaceLocation[];
       console.log("eSPACE locations (use the Id as locationId in config.json):\n");
       for (const l of list) console.log(`  ${String(l.Id).padEnd(8)} ${l.Name}${l.LocationCode ? `  (${l.LocationCode})` : ""}`);
       process.exit(0);
