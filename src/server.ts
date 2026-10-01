@@ -36,7 +36,7 @@ interface CampusConfig {
   locationId?: string | number;
   timezone?: string;
   hideRooms?: string[];       // events in these rooms are left off this campus's board entirely
-  stripRooms?: string[];      // regex patterns; matching room names are removed from the Room column only
+  stripRooms?: string[];      // regex patterns; matching text is removed from room names (Room column only)
   hidePastAfterMinutes?: number | null;
 }
 
@@ -62,7 +62,7 @@ interface Config {
   hidePastAfterMinutes: number | null;
   /** "both": event name, schedule name underneath when different (default). "event": event name only. "schedule": schedule name, falling back to event name. */
   eventTitle: "both" | "event" | "schedule";
-  /** Regex patterns for room names to remove from the Room column on every campus (e.g. "^Room \\d+$"). */
+  /** Regex patterns for text to remove from room names on every campus (e.g. ",\\s*Room \\d+$"). Names left empty are dropped. */
   stripRooms: string[];
   theme: ThemeConfig;
   espace: EspaceConfig;
@@ -236,7 +236,7 @@ async function pull(key: string): Promise<CampusState> {
     const raw = await espaceGet(url);
     if (!Array.isArray(raw)) throw new Error("eSPACE sent an unexpected reply for events (not a list).");
     const list = raw as EspaceOccurrence[];
-    const stripPatterns = [...cfg.stripRooms, ...(campus.stripRooms ?? [])].map(p => new RegExp(p, "i"));
+    const stripPatterns = [...cfg.stripRooms, ...(campus.stripRooms ?? [])].map(p => new RegExp(p, "gi"));
     const skipped: SkippedEvent[] = [];
     const keep = (e: MappedEvent, ok: boolean, reason: string): boolean => {
       if (!ok) skipped.push({ title: e.title, start: e.start, reason });
@@ -304,10 +304,19 @@ function mapOccurrence(o: EspaceOccurrence): MappedEvent | null {
 }
 
 /** Remove duplicate and pattern-matched room names, but never strip a room list down to nothing. */
+/**
+ * Remove text matching the stripRooms patterns from each room name, then drop names left
+ * empty and duplicates. eSPACE often sends a name and number as one string
+ * ("AN Meeting Room A, Room 1018"), so a pattern like ",\s*Room \d+$" trims the number,
+ * while "^Room \d+$" removes a room that is only a number. Never empties the list.
+ */
 function stripRoomNames(rooms: string[], patterns: RegExp[]): string[] {
   const unique = [...new Set(rooms)];
-  const kept = unique.filter(r => !patterns.some(p => p.test(r)));
-  return kept.length ? kept : unique;
+  const cleaned = unique
+    .map(r => patterns.reduce((name, p) => name.replace(p, ""), r).replace(/^[\s,;\-–]+|[\s,;\-–]+$/g, ""))
+    .filter(r => r !== "");
+  const result = [...new Set(cleaned)];
+  return result.length ? result : unique;
 }
 
 const addDays = (ymd: string, n: number): string => {

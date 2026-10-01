@@ -58,7 +58,7 @@ Each campus needs its eSPACE location ID. To list them, add your key to `.env` a
 | `refreshMinutes` | `15` | Extra pulls through the day. `0` = once a day only |
 | `hidePastAfterMinutes` | `15` | Minutes after an event ends before it leaves the board. `0` = as soon as it ends, `null` = keep the whole day. A campus can override it |
 | `eventTitle` | `both` | `both`: event name, with the eSPACE schedule name underneath when it differs. `event`: event name only. `schedule`: schedule name, falling back to the event name |
-| `stripRooms` | `[]` | Patterns for room names to leave out of the Room column, e.g. `["^Room \\d+$"]` when rooms are booked under both a name and a number. A campus can add its own. Never empties a room list |
+| `stripRooms` | `[]` | Patterns for text to remove from room names. eSPACE often sends a name and number together ("AN Meeting Room A, Room 1018"); `[",\\s*Room \\d+$"]` trims the number. A name left empty is dropped. A campus can add its own. Never empties a room list |
 | `espace.onlyApproved` | `true` | Hide pending or denied bookings |
 | `espace.onlyPublic` | `false` | Set `true` to hide private or staff-only events on public screens |
 | `campuses.<key>.hideRooms` | `[]` | Events booked in these rooms are left off that campus's board entirely (e.g. offices, storage) |
