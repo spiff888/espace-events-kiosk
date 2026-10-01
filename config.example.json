@@ -5,6 +5,8 @@
   "dailyPullAt": "04:00",
   "refreshMinutes": 15,
   "hidePastAfterMinutes": 15,
+  "eventTitle": "both",
+  "stripRooms": [],
 
   "espace": {
     "baseUrl": "https://api.espace.cool/api/v2",

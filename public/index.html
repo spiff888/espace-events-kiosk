@@ -109,6 +109,7 @@
   }
   .time small { display: block; font-size: .62em; font-weight: var(--display-weight-light); color: var(--ink-soft); margin-top: .15em; }
   .title { font-weight: 700; overflow-wrap: anywhere; }
+  .title .sub { display: block; margin-top: .15em; font-size: .72em; font-weight: 400; color: var(--ink-soft); }
   .title .tag {
     display: inline-block;
     vertical-align: .18em;
@@ -216,11 +217,11 @@
       events: [
         { title: "Team Meeting",             start: at(7, 0),   end: at(8, 0),   rooms: ["South Conference Room"] },
         { title: "Men's Breakfast",          start: at(8, 30),  end: at(10, 0),  rooms: ["Fellowship Hall"] },
-        { title: "Worship Rehearsal",        start: at(10, 0),  end: at(12, 0),  rooms: ["Main Auditorium"] },
+        { title: "Worship Rehearsal",        subtitle: "Band and vocals run-through", start: at(10, 0), end: at(12, 0), rooms: ["Main Auditorium"] },
         { title: "Baptism Class",            start: at(12, 30), end: at(13, 30), rooms: ["Room 204"] },
         { title: "Wedding Setup",            start: at(13, 0),  end: at(15, 0),  rooms: ["Chapel"] },
         { title: "Youth Leaders Huddle",     start: at(15, 30), end: at(16, 30), rooms: ["Student Center"] },
-        { title: "Saturday Night Service",   start: at(17, 0),  end: at(18, 15), rooms: ["Main Auditorium"] },
+        { title: "Weekend Services",         subtitle: "Saturday 5pm", start: at(17, 0), end: at(18, 15), rooms: ["Main Auditorium"] },
         { title: "Kids Check-In Volunteers", start: at(16, 30), end: at(18, 30), rooms: ["Kids Wing", "Lobby Kiosks"] },
         { title: "Prayer Team",              start: at(18, 30), end: at(19, 30), rooms: ["North Building, Room 301"] },
         { title: "Facilities Lockup",        start: at(21, 0),  end: at(21, 30), rooms: ["All Buildings"] }
@@ -263,7 +264,7 @@
     const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
     return `<li class="row ${e.state}">
       <span class="time">${e.allDay ? "All day" : `${fmtTime(e.start)}<small>until ${fmtTime(e.end)}</small>`}</span>
-      <span class="title">${esc(e.title)}${tag}</span>
+      <span class="title">${esc(e.title)}${tag}${e.subtitle ? `<small class="sub">${esc(e.subtitle)}</small>` : ""}</span>
       <span class="room">${esc((e.rooms || []).join(", "))}</span>
     </li>`;
   }

@@ -35,7 +35,8 @@ interface CampusConfig {
   theme?: ThemeConfig;
   locationId?: string | number;
   timezone?: string;
-  hideRooms?: string[];
+  hideRooms?: string[];       // events in these rooms are left off this campus's board entirely
+  stripRooms?: string[];      // regex patterns; matching room names are removed from the Room column only
   hidePastAfterMinutes?: number | null;
 }
 
@@ -59,6 +60,10 @@ interface Config {
   refreshMinutes: number;
   /** Minutes after an event ends before it drops off the board. null keeps the whole day. */
   hidePastAfterMinutes: number | null;
+  /** "both": event name, schedule name underneath when different (default). "event": event name only. "schedule": schedule name, falling back to event name. */
+  eventTitle: "both" | "event" | "schedule";
+  /** Regex patterns for room names to remove from the Room column on every campus (e.g. "^Room \\d+$"). */
+  stripRooms: string[];
   theme: ThemeConfig;
   espace: EspaceConfig;
   campuses: Record<string, CampusConfig>;
@@ -67,6 +72,7 @@ interface Config {
 /** One booking as the TV page receives it. */
 export interface BoardEvent {
   title: string;
+  subtitle?: string;     // eSPACE schedule name, when it adds something
   start: string; // ISO 8601
   end: string;
   rooms: string[];
@@ -76,6 +82,8 @@ export interface BoardEvent {
 interface MappedEvent extends BoardEvent {
   approved: boolean;
   public: boolean;
+  cancelled: boolean;
+  status: string;
 }
 
 interface CampusState {
@@ -97,6 +105,8 @@ interface EspaceOccurrence {
   OccurrenceId?: number;
   EventId?: number;
   EventName?: string;
+  ScheduleId?: number;
+  ScheduleName?: string;   // e.g. event "Weekend Services", schedule "Content Check"
   EventStart?: string;     // occurrence start (excludes setup)
   EventEnd?: string;       // occurrence end (excludes teardown)
   IsAllDay?: boolean;
@@ -159,6 +169,8 @@ function loadConfig(): Config {
     dailyPullAt: raw.dailyPullAt || "04:00",
     refreshMinutes: raw.refreshMinutes ?? 15,
     hidePastAfterMinutes: raw.hidePastAfterMinutes === undefined ? 15 : raw.hidePastAfterMinutes,
+    eventTitle: raw.eventTitle === "event" || raw.eventTitle === "schedule" ? raw.eventTitle : "both",
+    stripRooms: raw.stripRooms ?? [],
     campuses: raw.campuses,
     theme: raw.theme ?? {},
     espace: {
@@ -188,6 +200,9 @@ const hhmmIn = (tz: string): string => new Intl.DateTimeFormat("en-GB", { timeZo
 // ---------------------------------------------------------------- state -----
 // state[campus] = { date, events, updated, ok, error, lastAttempt }
 const state: Record<string, CampusState> = {};
+interface SkippedEvent { title: string; start: string; reason: string }
+/** Events left off each campus's board on the last pull, and why (shown by --pull-now). */
+const lastSkipped: Record<string, SkippedEvent[]> = {};
 for (const key of Object.keys(cfg.campuses)) {
   state[key] = readCache(key) || { date: null, events: [], updated: null, ok: false, error: null };
 }
@@ -221,15 +236,30 @@ async function pull(key: string): Promise<CampusState> {
     const raw = await espaceGet(url);
     if (!Array.isArray(raw)) throw new Error("eSPACE sent an unexpected reply for events (not a list).");
     const list = raw as EspaceOccurrence[];
+    const stripPatterns = [...cfg.stripRooms, ...(campus.stripRooms ?? [])].map(p => new RegExp(p, "i"));
+    const skipped: SkippedEvent[] = [];
+    const keep = (e: MappedEvent, ok: boolean, reason: string): boolean => {
+      if (!ok) skipped.push({ title: e.title, start: e.start, reason });
+      return ok;
+    };
     const events = list
       .map(mapOccurrence)
       .filter((e): e is MappedEvent => e !== null)
       .filter(e => e.start.slice(0, 10) <= date && e.end.slice(0, 10) >= date) // touches today
-      .filter(e => !cfg.espace.onlyApproved || e.approved)
-      .filter(e => !cfg.espace.onlyPublic || e.public)
-      .filter(e => !(campus.hideRooms || []).some(h => e.rooms.includes(h)))
-      .map(({ title, start, end, rooms, allDay }): BoardEvent => ({ title, start, end, rooms, ...(allDay ? { allDay } : {}) }))
+      .filter(e => keep(e, !e.cancelled, `cancelled (${e.status})`))
+      .filter(e => keep(e, !cfg.espace.onlyApproved || e.approved, `not approved (${e.status || "no status"})`))
+      .filter(e => keep(e, !cfg.espace.onlyPublic || e.public, "not public"))
+      .filter(e => keep(e, !(campus.hideRooms || []).some(h => e.rooms.includes(h)), "in a hidden room"))
+      .map(({ title, subtitle, start, end, rooms, allDay }): BoardEvent => ({
+        title,
+        ...(subtitle ? { subtitle } : {}),
+        start,
+        end,
+        rooms: stripRoomNames(rooms, stripPatterns),
+        ...(allDay ? { allDay } : {}),
+      }))
       .sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+    lastSkipped[key] = skipped;
     state[key] = { date, events, updated: new Date().toISOString(), ok: true, error: null, lastAttempt: state[key].lastAttempt };
     writeCache(key, state[key]);
     log(key, `pulled ${events.length} events for ${date}`);
@@ -243,21 +273,41 @@ async function pull(key: string): Promise<CampusState> {
 }
 
 // The one place that knows eSPACE's field names.
+const CANCELLED = /cancel|denied|declin|reject|delet/i;
+const same = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
+
 function mapOccurrence(o: EspaceOccurrence): MappedEvent | null {
   if (!o.EventName || !o.EventStart || !o.EventEnd) return null;
+  const event = o.EventName.trim();
+  const schedule = (o.ScheduleName ?? "").trim();
+  const distinct = schedule !== "" && !same(schedule, event);
+  const title = cfg.eventTitle === "schedule" && schedule ? schedule : event;
+  const subtitle = cfg.eventTitle === "both" && distinct ? schedule : undefined;
+  const status = [o.OccurrenceStatus, o.EventStatus].filter(Boolean).join(" / ");
   return {
-    title: o.EventName,
+    title,
+    subtitle,
     start: o.EventStart,
     end: o.EventEnd,
     allDay: o.IsAllDay === true,
     // Items mixes rooms with equipment and services; only rooms belong on the board.
     rooms: (o.Items ?? [])
       .filter(i => (i.ItemType ?? "Space").toLowerCase() === "space")
-      .map(i => i.Name)
-      .filter((n): n is string => typeof n === "string" && n.trim() !== ""),
-    approved: o.IsFinalApproved ?? /approved|confirmed/i.test(o.OccurrenceStatus ?? o.EventStatus ?? ""),
+      .map(i => i.Name?.trim())
+      .filter((n): n is string => typeof n === "string" && n !== ""),
+    // A cancelled occurrence can still carry IsFinalApproved: true, so check status separately.
+    cancelled: CANCELLED.test(o.OccurrenceStatus ?? "") || CANCELLED.test(o.EventStatus ?? ""),
+    approved: o.IsFinalApproved ?? /approved|confirmed/i.test(status),
     public: o.IsPublic !== false,
+    status,
   };
+}
+
+/** Remove duplicate and pattern-matched room names, but never strip a room list down to nothing. */
+function stripRoomNames(rooms: string[], patterns: RegExp[]): string[] {
+  const unique = [...new Set(rooms)];
+  const kept = unique.filter(r => !patterns.some(p => p.test(r)));
+  return kept.length ? kept : unique;
 }
 
 const addDays = (ymd: string, n: number): string => {
@@ -481,7 +531,8 @@ void (async () => {
     for (const k of Object.keys(cfg.campuses)) {
       const s = state[k];
       console.log(`${k}: ${s.ok ? "ok" : "FAILED"} · ${s.events.length} events · ${s.error || ""}`);
-      for (const e of s.events) console.log(`   ${e.start}  ${e.title}  [${e.rooms.join(", ")}]`);
+      for (const e of s.events) console.log(`   ${e.start}  ${e.title}${e.subtitle ? ` · ${e.subtitle}` : ""}  [${e.rooms.join(", ")}]`);
+      for (const x of lastSkipped[k] ?? []) console.log(`   (skipped) ${x.start}  ${x.title}: ${x.reason}`);
     }
     process.exit(Object.values(state).every(s => s.ok) ? 0 : 1);
   }

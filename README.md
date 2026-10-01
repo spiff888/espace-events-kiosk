@@ -57,9 +57,11 @@ Each campus needs its eSPACE location ID. To list them, add your key to `.env` a
 | `dailyPullAt` | `04:00` | Full pull each morning, campus local time |
 | `refreshMinutes` | `15` | Extra pulls through the day. `0` = once a day only |
 | `hidePastAfterMinutes` | `15` | Minutes after an event ends before it leaves the board. `0` = as soon as it ends, `null` = keep the whole day. A campus can override it |
+| `eventTitle` | `both` | `both`: event name, with the eSPACE schedule name underneath when it differs. `event`: event name only. `schedule`: schedule name, falling back to the event name |
+| `stripRooms` | `[]` | Patterns for room names to leave out of the Room column, e.g. `["^Room \\d+$"]` when rooms are booked under both a name and a number. A campus can add its own. Never empties a room list |
 | `espace.onlyApproved` | `true` | Hide pending or denied bookings |
 | `espace.onlyPublic` | `false` | Set `true` to hide private or staff-only events on public screens |
-| `campuses.<key>.hideRooms` | `[]` | Room names never shown on that campus's board (e.g. storage, offices) |
+| `campuses.<key>.hideRooms` | `[]` | Events booked in these rooms are left off that campus's board entirely (e.g. offices, storage) |
 
 ### 3. Run it
 
@@ -125,9 +127,9 @@ Campus Board reads `GET /api/v2/event/occurrences` from eSPACE's public API ([sp
 | Board | eSPACE field |
 |---|---|
 | Time | `EventStart`, `EventEnd` (event time, not setup or teardown); `IsAllDay` shows "All day" |
-| Event | `EventName` |
 | Room | `Items` where `ItemType` is `Space` (equipment and services are left out) |
-| Shown at all | `IsFinalApproved` (with `onlyApproved`), `IsPublic` (with `onlyPublic`) |
+| Event | `EventName`, plus `ScheduleName` underneath when it differs (see `eventTitle`) |
+| Shown at all | Never if `OccurrenceStatus` or `EventStatus` says cancelled, denied or deleted; then `IsFinalApproved` (with `onlyApproved`) and `IsPublic` (with `onlyPublic`) |
 
 Contact names, emails and phone numbers are never read, so they can't end up on a public screen. The mapping lives in `mapOccurrence()` in `src/server.ts`.
 
