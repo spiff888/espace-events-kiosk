@@ -77,6 +77,10 @@ export interface BoardEvent {
   end: string;
   rooms: string[];
   allDay?: boolean;
+  /** eSPACE occurrence id. Used by /api/v1/events, left off the TV payload. */
+  id?: string;
+  /** Room names exactly as eSPACE sends them, before stripRooms. Used by /api/v1/events. */
+  roomsRaw?: string[];
 }
 
 interface MappedEvent extends BoardEvent {
@@ -250,13 +254,15 @@ async function pull(key: string): Promise<CampusState> {
       .filter(e => keep(e, !cfg.espace.onlyApproved || e.approved, `not approved (${e.status || "no status"})`))
       .filter(e => keep(e, !cfg.espace.onlyPublic || e.public, "not public"))
       .filter(e => keep(e, !(campus.hideRooms || []).some(h => e.rooms.includes(h)), "in a hidden room"))
-      .map(({ title, subtitle, start, end, rooms, allDay }): BoardEvent => ({
+      .map(({ id, title, subtitle, start, end, rooms, allDay }): BoardEvent => ({
         title,
         ...(subtitle ? { subtitle } : {}),
         start,
         end,
         rooms: stripRoomNames(rooms, stripPatterns),
         ...(allDay ? { allDay } : {}),
+        ...(id ? { id } : {}),
+        roomsRaw: [...new Set(rooms)],
       }))
       .sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
     lastSkipped[key] = skipped;
@@ -285,6 +291,7 @@ function mapOccurrence(o: EspaceOccurrence): MappedEvent | null {
   const subtitle = cfg.eventTitle === "both" && distinct ? schedule : undefined;
   const status = [o.OccurrenceStatus, o.EventStatus].filter(Boolean).join(" / ");
   return {
+    id: o.OccurrenceId != null ? String(o.OccurrenceId) : undefined,
     title,
     subtitle,
     start: o.EventStart,
@@ -429,11 +436,66 @@ function boardPayload(key: string) {
     hidePastAfterMinutes: c.hidePastAfterMinutes === undefined ? cfg.hidePastAfterMinutes : c.hidePastAfterMinutes,
     demo: DEMO || undefined,
     // Never show yesterday's list on today's board.
-    events: s.date === today ? s.events : [],
+    events: (s.date === today ? s.events : []).map(({ id: _id, roomsRaw: _raw, ...e }) => e),
     updated: s.updated,
     stale: !s.ok || s.date !== today,
     error: s.error || undefined,
   };
+}
+
+/**
+ * Machine-readable feed for integrations (e.g. a camera/VMS sync), versioned so the TV
+ * payload can change freely. Same events as the board (same approval, cancellation,
+ * public and hidden-room rules), but with eSPACE's original room names, the occurrence
+ * id, and start/end as ISO 8601 with the campus's UTC offset.
+ */
+function feedPayload(key: string) {
+  const s = state[key];
+  const tz = tzOf(key);
+  const today = todayIn(tz);
+  return {
+    version: 1,
+    campus: key,
+    timezone: tz,
+    date: today,
+    updated: s.updated,
+    stale: !s.ok || s.date !== today,
+    events: (s.date === today ? s.events : []).map(e => ({
+      id: e.id ?? `${e.start}|${e.title}`,
+      title: e.title,
+      rooms: e.roomsRaw ?? e.rooms,
+      start: withOffset(e.start, tz),
+      end: withOffset(e.end, tz),
+      ...(e.allDay ? { allDay: true } : {}),
+    })),
+  };
+}
+
+/** Minutes the zone is ahead of UTC at a given instant. */
+function tzOffsetMinutes(ms: number, tz: string): number {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    }).formatToParts(ms).map(p => [p.type, p.value]),
+  );
+  const asUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
+  return Math.round((asUtc - ms) / 60000);
+}
+
+/** "2026-10-04T10:00:00" (campus wall time) -> "2026-10-04T10:00:00-07:00". Leaves times that already have an offset alone. */
+function withOffset(local: string, tz: string): string {
+  if (/(Z|[+-]\d\d:?\d\d)$/i.test(local)) return local;
+  const m = local.match(/^(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d)(?::(\d\d))?/);
+  if (!m) return local;
+  const wall = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] ?? 0));
+  let off = tzOffsetMinutes(wall, tz);
+  off = tzOffsetMinutes(wall - off * 60000, tz); // second pass settles DST edges
+  const sign = off < 0 ? "-" : "+";
+  const abs = Math.abs(off);
+  const hh = String(Math.floor(abs / 60)).padStart(2, "0");
+  const mm = String(abs % 60).padStart(2, "0");
+  return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6] ?? "00"}${sign}${hh}:${mm}`;
 }
 
 // ----------------------------------------------------------------- theme ----
@@ -500,6 +562,12 @@ const server = http.createServer(async (req, res) => {
     const key = api ? api[1] : url.searchParams.get("campus") ?? "";
     if (!cfg.campuses[key]) return send(res, 404, { error: `Unknown campus "${key}".` });
     return send(res, 200, boardPayload(key), undefined, { "Access-Control-Allow-Origin": "*" });
+  }
+
+  const feed = p.match(/^\/api\/v1\/events\/([\w-]+)$/);
+  if (feed) {
+    if (!cfg.campuses[feed[1]]) return send(res, 404, { error: `Unknown campus "${feed[1]}".` });
+    return send(res, 200, feedPayload(feed[1]));
   }
 
   if (p === "/api/refresh" && req.method === "POST") {

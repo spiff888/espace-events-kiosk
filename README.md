@@ -116,9 +116,34 @@ Each board page reloads itself at 3am, so TVs pick up updates without anyone tou
 | Path | Returns |
 |---|---|
 | `/board/<campus>` | The TV display |
-| `/api/today/<campus>` | Today's events as JSON |
+| `/api/today/<campus>` | Today's events as JSON, shaped for the TV page (may change between versions) |
+| `/api/v1/events/<campus>` | Stable feed for integrations: see below |
 | `/health` | `200` when every campus pulled today, `503` otherwise. Point your RMM or uptime monitor here |
 | `POST /api/refresh` | Pull now (limited to once a minute) |
+
+### Integration feed (`/api/v1/events/<campus>`)
+
+For other tools that react to room bookings, such as a camera or signage system. It carries the same events as the board, filtered by the same approval, cancellation, public and `hideRooms` rules, but with:
+
+- `rooms`: room names exactly as eSPACE sends them (before `stripRooms`), so integrations aren't affected by display tweaks
+- `id`: the eSPACE occurrence id
+- `start` / `end`: ISO 8601 with the campus's UTC offset, e.g. `2026-10-04T10:00:00-07:00`
+
+```json
+{
+  "version": 1,
+  "campus": "main",
+  "timezone": "America/Los_Angeles",
+  "date": "2026-10-04",
+  "updated": "2026-10-04T11:00:02.114Z",
+  "stale": false,
+  "events": [
+    { "id": "48213", "title": "Sunday Service", "rooms": ["Main Auditorium"], "start": "2026-10-04T10:00:00-07:00", "end": "2026-10-04T11:30:00-07:00" }
+  ]
+}
+```
+
+Fields are only ever added within `v1`; anything breaking gets a new path.
 
 ## How eSPACE data is used
 
