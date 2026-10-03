@@ -1,11 +1,12 @@
-# Campus Board
+# eSPACE Events Kiosk
 
 A lobby TV display that shows today's room bookings from **eSPACE Event Scheduler**, one board per campus.
 
-![Campus Board showing a day of events](docs/screenshot.png)
+![eSPACE Events Kiosk showing a day of events](docs/screenshot.png)
 
 - Three columns (Time, Event and Room). The current event is highlighted and the one after it is tagged as next.
 - Pulls from eSPACE once a day, then refreshes every 15 minutes to catch same-day changes (both configurable).
+- Only shows approved bookings by default. Cancelled, denied and deleted bookings never appear, even if eSPACE still marks them approved.
 - Caches the last good pull to disk, so the boards keep showing it if eSPACE or your internet goes down.
 - Runs on Windows, macOS, Linux or Docker (amd64 and arm64, so a Raspberry Pi works). Written in TypeScript, with no runtime dependencies beyond Node 18+.
 - Your eSPACE API key stays on your server and never reaches the TVs.
@@ -18,8 +19,8 @@ A lobby TV display that shows today's room bookings from **eSPACE Event Schedule
 ## How it works
 
 ```
-eSPACE API  ──(daily + every 15 min)──▶  Campus Board server  ──▶  TV at /board/main
-                                          (caches to disk)     ──▶  TV at /board/north
+eSPACE API  ──(daily + every 15 min)──▶  Kiosk server     ──▶  TV at /board/main
+                                          (caches to disk) ──▶  TV at /board/north
 ```
 
 One server can run every campus. Each TV opens its own campus URL in a full-screen browser.
@@ -59,7 +60,7 @@ Each campus needs its eSPACE location ID. To list them, add your key to `.env` a
 | `hidePastAfterMinutes` | `15` | Minutes after an event ends before it leaves the board. `0` = as soon as it ends, `null` = keep the whole day. A campus can override it |
 | `eventTitle` | `both` | `both`: event name, with the eSPACE schedule name underneath when it differs. `event`: event name only. `schedule`: schedule name, falling back to the event name |
 | `stripRooms` | `[]` | Patterns for text to remove from room names. eSPACE often sends a name and number together ("AN Meeting Room A, Room 1018"); `[",\\s*Room \\d+$"]` trims the number. A name left empty is dropped. A campus can add its own. Never empties a room list |
-| `espace.onlyApproved` | `true` | Hide pending or denied bookings |
+| `espace.onlyApproved` | `true` | Hide pending bookings. Cancelled, denied and deleted bookings are always hidden |
 | `espace.onlyPublic` | `false` | Set `true` to hide private or staff-only events on public screens |
 | `campuses.<key>.hideRooms` | `[]` | Events booked in these rooms are left off that campus's board entirely (e.g. offices, storage) |
 
@@ -147,7 +148,7 @@ Fields are only ever added within `v1`; anything breaking gets a new path.
 
 ## How eSPACE data is used
 
-Campus Board reads `GET /api/v2/event/occurrences` from eSPACE's public API ([spec](https://api.espace.cool/swagger/ui/index)), filtered by `locationIds` and today's date. From each occurrence it shows:
+eSPACE Events Kiosk reads `GET /api/v2/event/occurrences` from eSPACE's public API ([spec](https://api.espace.cool/swagger/ui/index)), filtered by `locationIds` and today's date. From each occurrence it shows:
 
 | Board | eSPACE field |
 |---|---|
