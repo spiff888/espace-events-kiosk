@@ -212,4 +212,6 @@ The display is a single file, `public/index.html`. Text sizes scale with the scr
 
 ## License
 
-MIT
+GPL-3.0-or-later. © 2026 Philip Gaw. See [LICENSE](LICENSE).
+
+You can use, change and share this freely. If you distribute a modified version, you must release its source under the same license.
